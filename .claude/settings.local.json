@@ -12,7 +12,10 @@
       "Read(//c/Proyectos/gestioncontableapp-tmp/**)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/dashboard)",
       "Bash(curl -s http://localhost:3000/dashboard)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code} %{redirect_url}\\\\n\" http://localhost:3000/)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{redirect_url}\\\\n\" http://localhost:3000/)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm lint *)",
+      "Bash(git stash *)"
     ]
   }
 }

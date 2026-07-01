@@ -1,30 +1,62 @@
-import { Bell } from "lucide-react";
+"use client";
+
+import { Bell, ChevronDown, Menu, Search } from "lucide-react";
+import { useSidebar } from "@/components/layout/sidebar-context";
 
 export function Header({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
-      <div>
-        <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
-        {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
-      </div>
+  const { openMobile } = useSidebar();
 
-      <div className="flex items-center gap-4">
+  return (
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
+      <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
-          className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          onClick={openMobile}
+          aria-label="Abrir menú"
+          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>
+          {subtitle && <p className="truncate text-sm text-slate-500">{subtitle}</p>}
+        </div>
+      </div>
+
+      <div className="hidden flex-1 justify-center px-4 md:flex">
+        <div className="flex w-full max-w-sm items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-400 transition-colors focus-within:border-indigo-300 focus-within:bg-white">
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="truncate">Buscar clientes, comprobantes...</span>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1 sm:gap-3">
+        <button
+          type="button"
+          className="relative rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
           aria-label="Notificaciones"
+          title="Próximamente"
         >
           <Bell className="h-5 w-5" />
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-rose-500" />
         </button>
-        <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-600">
+
+        <div className="h-6 w-px bg-slate-200 max-sm:hidden" />
+
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-100"
+          title="Próximamente"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
             U
           </div>
-          <div className="hidden text-sm sm:block">
-            <p className="font-medium text-slate-900">Usuario</p>
-            <p className="text-xs text-slate-500">Sin sesión iniciada</p>
+          <div className="hidden text-left text-sm sm:block">
+            <p className="font-medium leading-tight text-slate-900">Usuario Demo</p>
+            <p className="text-xs leading-tight text-slate-400">Administrador</p>
           </div>
-        </div>
+          <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
+        </button>
       </div>
     </header>
   );

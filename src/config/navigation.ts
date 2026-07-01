@@ -13,13 +13,50 @@ export type NavItem = {
   href: string;
   icon: LucideIcon;
   enabled: boolean;
+  description: string;
 };
 
 export const navigation: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true },
-  { label: "Clientes", href: "/clientes", icon: Users, enabled: false },
-  { label: "Facturación", href: "/facturacion", icon: FileText, enabled: false },
-  { label: "Empleados", href: "/empleados", icon: UserSquare2, enabled: false },
-  { label: "Reportes", href: "/reportes", icon: BarChart3, enabled: false },
-  { label: "Configuración", href: "/configuracion", icon: Settings, enabled: false },
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    enabled: true,
+    description: "Centro de operaciones",
+  },
+  {
+    label: "Clientes",
+    href: "/clientes",
+    icon: Users,
+    enabled: false,
+    description: "Cartera y estado de cuenta",
+  },
+  {
+    label: "Facturación",
+    href: "/facturacion",
+    icon: FileText,
+    enabled: false,
+    description: "Comprobantes y cobros",
+  },
+  {
+    label: "Empleados",
+    href: "/empleados",
+    icon: UserSquare2,
+    enabled: false,
+    description: "Legajos y horas",
+  },
+  {
+    label: "Reportes",
+    href: "/reportes",
+    icon: BarChart3,
+    enabled: false,
+    description: "Indicadores y balances",
+  },
+  {
+    label: "Configuración",
+    href: "/configuracion",
+    icon: Settings,
+    enabled: false,
+    description: "Preferencias del sistema",
+  },
 ];
