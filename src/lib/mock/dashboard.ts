@@ -157,9 +157,9 @@ export const quickAccess = [
   {
     label: "Clientes",
     description: "Cartera y estado de cuenta",
-    href: "/clientes",
+    href: "/clients",
     icon: Users,
-    enabled: false,
+    enabled: true,
   },
   {
     label: "Facturación",

@@ -26,9 +26,9 @@ export const navigation: NavItem[] = [
   },
   {
     label: "Clientes",
-    href: "/clientes",
+    href: "/clients",
     icon: Users,
-    enabled: false,
+    enabled: true,
     description: "Cartera y estado de cuenta",
   },
   {
