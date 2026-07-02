@@ -1,16 +1,7 @@
 import { Building2, UserRound } from "lucide-react";
 import { ClientStatusBadge } from "@/components/clients/ClientStatusBadge";
+import { getInitials } from "@/lib/utils";
 import type { Client } from "@/lib/mock/clients";
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join("")
-    .toUpperCase();
-}
 
 export function ClientWorkspaceHeader({ client }: { client: Client }) {
   return (

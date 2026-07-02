@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BarChart3,
   Clock,
+  Clock3,
   DollarSign,
   FileClock,
   FileText,
@@ -171,9 +172,16 @@ export const quickAccess = [
   {
     label: "Empleados",
     description: "Legajos y horas",
-    href: "/empleados",
+    href: "/employees",
     icon: UserSquare2,
-    enabled: false,
+    enabled: true,
+  },
+  {
+    label: "Horas",
+    description: "Registro de horas trabajadas",
+    href: "/hours",
+    icon: Clock3,
+    enabled: true,
   },
   {
     label: "Reportes",

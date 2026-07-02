@@ -9,3 +9,13 @@ export function formatCurrency(value: number) {
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "long" }).format(new Date(value));
 }
+
+export function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}

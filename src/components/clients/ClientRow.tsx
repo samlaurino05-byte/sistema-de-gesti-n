@@ -1,18 +1,8 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { ClientStatusBadge } from "@/components/clients/ClientStatusBadge";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, getInitials } from "@/lib/utils";
 import type { Client } from "@/lib/mock/clients";
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join("")
-    .toUpperCase();
-}
 
 export function ClientRow({ client }: { client: Client }) {
   return (

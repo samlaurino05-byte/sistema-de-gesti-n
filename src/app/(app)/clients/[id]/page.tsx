@@ -6,7 +6,6 @@ import {
   Calendar,
   Clock3,
   CreditCard,
-  FileText,
   Mail,
   MessagesSquare,
   Phone,
@@ -15,8 +14,12 @@ import {
 import { Header } from "@/components/layout/Header";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { AiPanel } from "@/components/ui/AiPanel";
+import { TimelineItem } from "@/components/ui/TimelineItem";
+import { DocumentRow } from "@/components/ui/DocumentRow";
+import { QuickActionsGrid } from "@/components/ui/QuickActionsGrid";
 import { ClientWorkspaceHeader } from "@/components/clients/ClientWorkspaceHeader";
-import { ClientTimelineItem } from "@/components/clients/ClientTimelineItem";
+import { HourRow } from "@/components/hours/HourRow";
+import { HourTableHead } from "@/components/hours/HourTableHead";
 import {
   clients,
   getClientAiInsights,
@@ -26,6 +29,7 @@ import {
   getClientTimeline,
   quickActions,
 } from "@/lib/mock/clients";
+import { getHoursForClient, summarizeHours } from "@/lib/mock/hours";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +50,8 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const documents = getClientDocuments(client);
   const communications = getClientCommunications(client);
   const aiSuggestions = getClientAiInsights(client).map((text) => ({ text }));
+  const hourEntries = getHoursForClient(client.id);
+  const hoursSummary = summarizeHours(hourEntries);
 
   return (
     <>
@@ -117,7 +123,7 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
               <h3 className="text-sm font-semibold text-slate-900">Timeline</h3>
               <div className="mt-4">
                 {timeline.map((entry, index) => (
-                  <ClientTimelineItem key={entry.id} {...entry} isLast={index === timeline.length - 1} />
+                  <TimelineItem key={entry.id} {...entry} isLast={index === timeline.length - 1} />
                 ))}
               </div>
             </section>
@@ -126,47 +132,50 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
               <h3 className="text-sm font-semibold text-slate-900">Documentos</h3>
               <div className="mt-2 divide-y divide-slate-100">
                 {documents.map((document) => (
-                  <div key={document.id} className="flex items-center gap-3 py-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                      <FileText className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-800">{document.name}</p>
-                      <p className="truncate text-xs text-slate-500">
-                        {document.type} · {document.size} · {document.date}
-                      </p>
-                    </div>
-                    <span
-                      className="shrink-0 cursor-not-allowed text-xs font-semibold text-slate-300"
-                      title="Próximamente"
-                    >
-                      Ver
-                    </span>
-                  </div>
+                  <DocumentRow key={document.id} document={document} />
                 ))}
               </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                <h3 className="text-sm font-semibold text-slate-900">Resumen de horas</h3>
+                <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+                  <span>
+                    Horas: <strong className="text-slate-800">{hoursSummary.horas} h</strong>
+                  </span>
+                  <span>
+                    Facturación: <strong className="text-slate-800">{formatCurrency(hoursSummary.facturacion)}</strong>
+                  </span>
+                  <span>
+                    Margen: <strong className="text-slate-800">{formatCurrency(hoursSummary.margen)}</strong>
+                  </span>
+                </div>
+              </div>
+              {hourEntries.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] border-collapse">
+                    <HourTableHead showClient={false} />
+                    <tbody>
+                      {hourEntries.map((entry) => (
+                        <HourRow key={entry.id} entry={entry} showClient={false} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="p-5 pt-0 text-sm text-slate-500 sm:p-6 sm:pt-0">
+                  Todavía no hay horas registradas para este cliente.
+                </p>
+              )}
             </section>
           </div>
 
           <div className="space-y-6">
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="text-sm font-semibold text-slate-900">Acciones rápidas</h3>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {quickActions.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <button
-                      key={action.label}
-                      type="button"
-                      disabled
-                      title="Próximamente"
-                      className="flex cursor-not-allowed flex-col items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left text-slate-400"
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span className="text-xs font-medium leading-tight">{action.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="mt-3">
+                <QuickActionsGrid actions={quickActions} />
               </div>
             </section>
 

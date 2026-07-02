@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type ClientTimelineItemProps = {
+type TimelineItemProps = {
   icon: LucideIcon;
   title: string;
   description: string;
@@ -10,21 +10,21 @@ type ClientTimelineItemProps = {
   isLast?: boolean;
 };
 
-const toneStyles: Record<NonNullable<ClientTimelineItemProps["tone"]>, string> = {
+const toneStyles: Record<NonNullable<TimelineItemProps["tone"]>, string> = {
   default: "bg-slate-100 text-slate-600",
   success: "bg-emerald-50 text-emerald-600",
   warning: "bg-amber-50 text-amber-600",
   danger: "bg-rose-50 text-rose-600",
 };
 
-export function ClientTimelineItem({
+export function TimelineItem({
   icon: Icon,
   title,
   description,
   date,
   tone = "default",
   isLast = false,
-}: ClientTimelineItemProps) {
+}: TimelineItemProps) {
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">

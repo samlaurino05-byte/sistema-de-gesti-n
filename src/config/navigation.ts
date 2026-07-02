@@ -3,6 +3,7 @@ import {
   Users,
   FileText,
   UserSquare2,
+  Clock3,
   BarChart3,
   Settings,
   type LucideIcon,
@@ -40,10 +41,17 @@ export const navigation: NavItem[] = [
   },
   {
     label: "Empleados",
-    href: "/empleados",
+    href: "/employees",
     icon: UserSquare2,
-    enabled: false,
+    enabled: true,
     description: "Legajos y horas",
+  },
+  {
+    label: "Horas",
+    href: "/hours",
+    icon: Clock3,
+    enabled: true,
+    description: "Registro de horas trabajadas",
   },
   {
     label: "Reportes",
