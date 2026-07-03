@@ -191,9 +191,9 @@ export const quickAccess = [
   {
     label: "Reportes",
     description: "Indicadores y balances",
-    href: "/reportes",
+    href: "/reports",
     icon: BarChart3,
-    enabled: false,
+    enabled: true,
   },
   {
     label: "Configuración",

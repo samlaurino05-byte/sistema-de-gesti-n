@@ -55,9 +55,9 @@ export const navigation: NavItem[] = [
   },
   {
     label: "Reportes",
-    href: "/reportes",
+    href: "/reports",
     icon: BarChart3,
-    enabled: false,
+    enabled: true,
     description: "Indicadores y balances",
   },
   {
