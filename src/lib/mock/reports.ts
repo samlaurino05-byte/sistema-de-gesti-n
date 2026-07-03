@@ -21,12 +21,12 @@ export const reportPeriodLabels: Record<ReportPeriod, string> = {
 // getters back (getMonth, getFullYear) can roll the date into the previous day
 // under a negative UTC offset. Parsing the parts directly keeps it local and
 // unambiguous regardless of the host timezone.
-function parseLocalDate(dateValue: string): Date {
+export function parseLocalDate(dateValue: string): Date {
   const [year, month, day] = dateValue.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
-const REPORTS_REFERENCE_DATE = new Date(2026, 6, 3);
+export const REPORTS_REFERENCE_DATE = new Date(2026, 6, 3);
 
 export function isWithinReportPeriod(dateValue: string, period: ReportPeriod): boolean {
   if (period === "todo" || !dateValue) return true;

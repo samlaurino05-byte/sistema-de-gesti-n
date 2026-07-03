@@ -6,6 +6,7 @@ import {
   DollarSign,
   FileClock,
   FileText,
+  HandCoins,
   ReceiptText,
   Settings,
   TrendingDown,
@@ -172,6 +173,13 @@ export const quickAccess = [
     description: "Comprobantes y cobros",
     href: "/invoices",
     icon: FileText,
+    enabled: true,
+  },
+  {
+    label: "Cobranzas",
+    description: "Seguimiento de pagos pendientes",
+    href: "/collections",
+    icon: HandCoins,
     enabled: true,
   },
   {

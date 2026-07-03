@@ -144,7 +144,7 @@ export function ReportsView({ invoices, hourEntries }: { invoices: Invoice[]; ho
                 key: entry.client.id,
                 label: entry.client.nombreComercial,
                 value: entry.amount,
-                href: `/clients/${entry.client.id}`,
+                href: `/collections?cliente=${entry.client.id}`,
               }))}
               colorClassName="bg-rose-500"
               valueFormatter={formatCurrency}

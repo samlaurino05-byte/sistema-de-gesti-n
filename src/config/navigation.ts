@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Users,
   FileText,
+  HandCoins,
   UserSquare2,
   Clock3,
   BarChart3,
@@ -38,6 +39,13 @@ export const navigation: NavItem[] = [
     icon: FileText,
     enabled: true,
     description: "Comprobantes y cobros",
+  },
+  {
+    label: "Cobranzas",
+    href: "/collections",
+    icon: HandCoins,
+    enabled: true,
+    description: "Seguimiento de pagos pendientes",
   },
   {
     label: "Empleados",

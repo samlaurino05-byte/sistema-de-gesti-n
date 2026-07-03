@@ -21,6 +21,7 @@ import { ClientWorkspaceHeader } from "@/components/clients/ClientWorkspaceHeade
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
 import { InvoiceRow } from "@/components/invoices/InvoiceRow";
+import { ClientCollectionSummary } from "@/components/collections/ClientCollectionSummary";
 import {
   clients,
   getClientAiInsights,
@@ -30,8 +31,9 @@ import {
   getClientTimeline,
   quickActions,
 } from "@/lib/mock/clients";
+import { getCollectionSummaryForClient } from "@/lib/mock/collections";
 import { getHoursForClient, summarizeHours } from "@/lib/mock/hours";
-import { getInvoicesForClient, summarizeInvoices } from "@/lib/mock/invoices";
+import { getInvoicesForClient, invoices, summarizeInvoices } from "@/lib/mock/invoices";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -56,6 +58,7 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const hoursSummary = summarizeHours(hourEntries);
   const clientInvoices = getInvoicesForClient(client.id);
   const invoicesSummary = summarizeInvoices(clientInvoices);
+  const collectionSummary = getCollectionSummaryForClient(client.id, invoices);
 
   return (
     <>
@@ -213,6 +216,8 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
                 <QuickActionsGrid actions={quickActions} />
               </div>
             </section>
+
+            <ClientCollectionSummary group={collectionSummary} />
 
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-center gap-2">

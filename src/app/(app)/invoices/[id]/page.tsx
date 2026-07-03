@@ -9,7 +9,9 @@ import { QuickActionsGrid } from "@/components/ui/QuickActionsGrid";
 import { InvoiceWorkspaceHeader } from "@/components/invoices/InvoiceWorkspaceHeader";
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
+import { CollectionStatusBadge } from "@/components/collections/CollectionStatusBadge";
 import { getClientById } from "@/lib/mock/clients";
+import { getCollectionForInvoice, suggestedChannelLabels } from "@/lib/mock/collections";
 import {
   getInvoiceAiInsights,
   getInvoiceById,
@@ -43,6 +45,7 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
   const timeline = getInvoiceTimeline(invoice);
   const hourEntries = getInvoiceHourEntries(invoice);
   const aiSuggestions = getInvoiceAiInsights(invoice).map((text) => ({ text }));
+  const collection = getCollectionForInvoice(invoice);
 
   return (
     <>
@@ -141,6 +144,33 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
           </div>
 
           <div className="space-y-6">
+            {collection && (
+              <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900">Estado de cobranza</h3>
+                  <CollectionStatusBadge status={collection.estadoCobranza} />
+                </div>
+                <dl className="mt-3 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <dt className="text-xs text-slate-400">Días de mora</dt>
+                    <dd className="font-medium text-slate-800">
+                      {collection.diasMora > 0 ? `${collection.diasMora} d` : "Sin vencer"}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <dt className="text-xs text-slate-400">Canal sugerido</dt>
+                    <dd className="font-medium text-slate-800">{suggestedChannelLabels[collection.canalSugerido]}</dd>
+                  </div>
+                </dl>
+                <Link
+                  href={`/collections?cliente=${client.id}`}
+                  className="mt-3 inline-block text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                >
+                  Ver en Cobranzas
+                </Link>
+              </section>
+            )}
+
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="text-sm font-semibold text-slate-900">Acciones rápidas</h3>
               <div className="mt-3">
