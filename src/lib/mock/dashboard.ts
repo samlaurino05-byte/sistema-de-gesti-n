@@ -13,11 +13,16 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { invoices } from "@/lib/mock/invoices";
 
 export const currentUser = {
   name: "Usuario Demo",
   role: "Administrador",
 };
+
+const invoicesPendientes = invoices.filter((invoice) => invoice.estado === "emitida");
+const invoicesVencidas = invoices.filter((invoice) => invoice.estado === "vencida");
+const facturasPorGestionar = invoicesPendientes.length + invoicesVencidas.length;
 
 export const metrics = [
   {
@@ -46,8 +51,8 @@ export const metrics = [
   },
   {
     label: "Facturas pendientes",
-    value: "8",
-    change: "3 vencen esta semana",
+    value: String(facturasPorGestionar),
+    change: `${invoicesVencidas.length} vencidas requieren gestión`,
     trend: "neutral" as const,
     icon: FileClock,
     tone: "default" as const,
@@ -64,7 +69,7 @@ export const alerts = [
   },
   {
     id: "facturas-vencidas",
-    title: "3 facturas vencidas",
+    title: `${invoicesVencidas.length} facturas vencidas`,
     description: "Requieren seguimiento de cobro esta semana",
     variant: "warning" as const,
     icon: FileClock,
@@ -118,7 +123,7 @@ export const recentActivity = [
     id: 2,
     icon: ReceiptText,
     title: "Nuevo comprobante — Distribuidora Norte",
-    meta: "Factura B N.º 0003-00124 cargada",
+    meta: "Factura A 0003-00142 cargada",
     time: "Hace 1 h",
     tone: "default" as const,
   },
@@ -141,8 +146,8 @@ export const recentActivity = [
   {
     id: 5,
     icon: FileText,
-    title: "Factura enviada — Panadería Del Sol",
-    meta: "Factura A N.º 0001-00087 por $45.300",
+    title: "Factura pagada — Panadería Del Sol",
+    meta: "Factura B 0003-00144 por $30.008",
     time: "Ayer",
     tone: "default" as const,
   },
@@ -165,9 +170,9 @@ export const quickAccess = [
   {
     label: "Facturación",
     description: "Comprobantes y cobros",
-    href: "/facturacion",
+    href: "/invoices",
     icon: FileText,
-    enabled: false,
+    enabled: true,
   },
   {
     label: "Empleados",

@@ -20,6 +20,7 @@ import { QuickActionsGrid } from "@/components/ui/QuickActionsGrid";
 import { ClientWorkspaceHeader } from "@/components/clients/ClientWorkspaceHeader";
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
+import { InvoiceRow } from "@/components/invoices/InvoiceRow";
 import {
   clients,
   getClientAiInsights,
@@ -30,6 +31,7 @@ import {
   quickActions,
 } from "@/lib/mock/clients";
 import { getHoursForClient, summarizeHours } from "@/lib/mock/hours";
+import { getInvoicesForClient, summarizeInvoices } from "@/lib/mock/invoices";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +54,8 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const aiSuggestions = getClientAiInsights(client).map((text) => ({ text }));
   const hourEntries = getHoursForClient(client.id);
   const hoursSummary = summarizeHours(hourEntries);
+  const clientInvoices = getInvoicesForClient(client.id);
+  const invoicesSummary = summarizeInvoices(clientInvoices);
 
   return (
     <>
@@ -166,6 +170,37 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
               ) : (
                 <p className="p-5 pt-0 text-sm text-slate-500 sm:p-6 sm:pt-0">
                   Todavía no hay horas registradas para este cliente.
+                </p>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                <h3 className="text-sm font-semibold text-slate-900">Facturas</h3>
+                <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+                  <span>
+                    Comprobantes: <strong className="text-slate-800">{clientInvoices.length}</strong>
+                  </span>
+                  <span>
+                    Facturado: <strong className="text-slate-800">{formatCurrency(invoicesSummary.totalFacturado)}</strong>
+                  </span>
+                  <span>
+                    Pendiente:{" "}
+                    <strong className="text-slate-800">
+                      {formatCurrency(invoicesSummary.pendienteCobro + invoicesSummary.vencido)}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+              {clientInvoices.length > 0 ? (
+                <div className="divide-y divide-slate-100">
+                  {clientInvoices.map((invoice) => (
+                    <InvoiceRow key={invoice.id} invoice={invoice} showClient={false} />
+                  ))}
+                </div>
+              ) : (
+                <p className="p-5 pt-0 text-sm text-slate-500 sm:p-6 sm:pt-0">
+                  Todavía no hay facturas emitidas para este cliente.
                 </p>
               )}
             </section>

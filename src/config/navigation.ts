@@ -34,9 +34,9 @@ export const navigation: NavItem[] = [
   },
   {
     label: "Facturación",
-    href: "/facturacion",
+    href: "/invoices",
     icon: FileText,
-    enabled: false,
+    enabled: true,
     description: "Comprobantes y cobros",
   },
   {

@@ -3,6 +3,7 @@ import { HourStatusBadge } from "@/components/hours/HourStatusBadge";
 import { getClientById } from "@/lib/mock/clients";
 import { getEmployeeById } from "@/lib/mock/employees";
 import { getHourEntryMetrics, type HourEntry } from "@/lib/mock/hours";
+import { getInvoiceById } from "@/lib/mock/invoices";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 type HourRowProps = {
@@ -14,6 +15,7 @@ type HourRowProps = {
 export function HourRow({ entry, showEmployee = true, showClient = true }: HourRowProps) {
   const employee = getEmployeeById(entry.employeeId);
   const client = getClientById(entry.clientId);
+  const invoice = entry.invoiceId ? getInvoiceById(entry.invoiceId) : undefined;
   const { costo, facturacion, margen } = getHourEntryMetrics(entry);
 
   return (
@@ -54,6 +56,14 @@ export function HourRow({ entry, showEmployee = true, showClient = true }: HourR
       </td>
       <td className="whitespace-nowrap px-4 py-3 text-sm">
         <HourStatusBadge status={entry.estado} />
+        {invoice && (
+          <Link
+            href={`/invoices/${invoice.id}`}
+            className="mt-1 block text-[11px] font-medium text-indigo-600 hover:text-indigo-700"
+          >
+            {invoice.numero}
+          </Link>
+        )}
       </td>
     </tr>
   );

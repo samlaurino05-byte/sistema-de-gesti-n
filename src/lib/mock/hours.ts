@@ -11,6 +11,7 @@ export type HourEntry = {
   valorHoraCliente: number;
   descripcion: string;
   estado: HourEntryStatus;
+  invoiceId?: string;
 };
 
 export const hourEntryStatusLabels: Record<HourEntryStatus, string> = {
@@ -32,6 +33,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 8500,
     descripcion: "Cierre contable del mes de mayo.",
     estado: "facturada",
+    invoiceId: "inv-estudio-beltran-01",
   },
   {
     id: "h2",
@@ -92,6 +94,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 7800,
     descripcion: "Conciliación de cuentas bancarias de mayo.",
     estado: "facturada",
+    invoiceId: "inv-distribuidora-norte-01",
   },
   {
     id: "h7",
@@ -115,7 +118,8 @@ export const hourEntries: HourEntry[] = [
     valorHoraInterno: 4200,
     valorHoraCliente: 9500,
     descripcion: "Revisión de procesos administrativos internos.",
-    estado: "aprobada",
+    estado: "facturada",
+    invoiceId: "inv-constructora-del-plata-01",
   },
   {
     id: "h9",
@@ -152,6 +156,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 9200,
     descripcion: "Cálculo y presentación del impuesto a las ganancias.",
     estado: "facturada",
+    invoiceId: "inv-tech-solutions-01",
   },
   {
     id: "h12",
@@ -200,6 +205,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 6200,
     descripcion: "Liquidación de sueldos del mes de mayo.",
     estado: "facturada",
+    invoiceId: "inv-panaderia-del-sol-01",
   },
   {
     id: "h16",
@@ -260,6 +266,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 10500,
     descripcion: "Reunión estratégica con el cliente.",
     estado: "facturada",
+    invoiceId: "inv-consultora-vertice-01",
   },
   {
     id: "h21",
@@ -320,6 +327,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 9200,
     descripcion: "Revisión de situación impositiva.",
     estado: "aprobada",
+    invoiceId: "inv-tech-solutions-02",
   },
   {
     id: "h26",
@@ -332,6 +340,7 @@ export const hourEntries: HourEntry[] = [
     valorHoraCliente: 7200,
     descripcion: "Preparación de IVA mensual.",
     estado: "facturada",
+    invoiceId: "inv-grupo-almendra-01",
   },
 ];
 
