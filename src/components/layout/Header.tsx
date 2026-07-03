@@ -1,10 +1,13 @@
 "use client";
 
-import { Bell, ChevronDown, Menu, Search } from "lucide-react";
+import { useState } from "react";
+import Link from "next/link";
+import { Bell, ChevronDown, LogOut, Menu, Search, Settings } from "lucide-react";
 import { useSidebar } from "@/components/layout/sidebar-context";
 
 export function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   const { openMobile } = useSidebar();
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
@@ -43,20 +46,52 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
 
         <div className="h-6 w-px bg-slate-200 max-sm:hidden" />
 
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-100"
-          title="Próximamente"
-        >
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
-            U
-          </div>
-          <div className="hidden text-left text-sm sm:block">
-            <p className="font-medium leading-tight text-slate-900">Usuario Demo</p>
-            <p className="text-xs leading-tight text-slate-400">Administrador</p>
-          </div>
-          <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsUserMenuOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={isUserMenuOpen}
+            className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-100"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
+              U
+            </div>
+            <div className="hidden text-left text-sm sm:block">
+              <p className="font-medium leading-tight text-slate-900">Usuario Demo</p>
+              <p className="text-xs leading-tight text-slate-400">Administrador</p>
+            </div>
+            <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
+          </button>
+
+          {isUserMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)} />
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-50 mt-2 w-52 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+              >
+                <Link
+                  href="/settings"
+                  onClick={() => setIsUserMenuOpen(false)}
+                  className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  <Settings className="h-4 w-4 text-slate-400" />
+                  Configuración
+                </Link>
+                <button
+                  type="button"
+                  disabled
+                  title="Próximamente"
+                  className="flex w-full cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-400"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Cerrar sesión
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

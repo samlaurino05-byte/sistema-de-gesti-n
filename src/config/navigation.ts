@@ -70,9 +70,9 @@ export const navigation: NavItem[] = [
   },
   {
     label: "Configuración",
-    href: "/configuracion",
+    href: "/settings",
     icon: Settings,
-    enabled: false,
+    enabled: true,
     description: "Preferencias del sistema",
   },
 ];

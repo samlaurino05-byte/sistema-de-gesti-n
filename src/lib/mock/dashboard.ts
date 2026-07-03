@@ -206,8 +206,8 @@ export const quickAccess = [
   {
     label: "Configuración",
     description: "Preferencias del sistema",
-    href: "/configuracion",
+    href: "/settings",
     icon: Settings,
-    enabled: false,
+    enabled: true,
   },
 ];
