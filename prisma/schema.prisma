@@ -1,0 +1,617 @@
+// Sprint 8.1 — modelo de datos inicial (multi-tenant).
+// Este schema define la estructura de base de datos. Todavía no se migran
+// los mocks de src/lib/mock ni se conecta ningún módulo visual a Prisma.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Tenant raíz
+// ---------------------------------------------------------------------------
+
+/// Una empresa de servicios (estudio) que usa el sistema. Toda entidad de
+/// negocio pertenece a una Organization: es el límite de aislamiento
+/// multi-tenant. Ninguna query de negocio debería ejecutarse sin filtrar por
+/// organizationId.
+model Organization {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  nombre       String
+  razonSocial  String
+  cuit         String
+  email        String
+  telefono     String
+  direccion    String
+  localidad    String
+  provincia    String
+  logoInitials String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships         Membership[]
+  employees           Employee[]
+  clients             Client[]
+  hourEntries         HourEntry[]
+  invoices            Invoice[]
+  invoiceItems        InvoiceItem[]
+  payments            Payment[]
+  collectionFollowUps CollectionFollowUp[]
+  invoiceCounters     InvoiceCounter[]
+  roles               Role[]
+  billingSettings     BillingSettings?
+  hoursSettings       HoursSettings?
+  systemPreferences   SystemPreference[]
+  auditLogs           AuditLog[]
+}
+
+// ---------------------------------------------------------------------------
+// Identidad y acceso
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  ACTIVO
+  INVITACION_PENDIENTE
+  INACTIVO
+}
+
+/// Cuenta con acceso al sistema. Separada de Employee: no todo empleado
+/// tiene login, y (a futuro) no todo usuario necesita ser empleado.
+///
+/// Identidad global, no atada a una única Organization: la pertenencia a
+/// cada organización (con su rol y su vínculo opcional a Employee ahí) vive
+/// en Membership. `estado` acá es el estado de la cuenta a nivel plataforma
+/// (independiente de si está activa en tal o cual organización particular
+/// — eso lo maneja Membership.estado).
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String?
+  nombre       String
+  estado       UserStatus @default(ACTIVO)
+  ultimoAcceso DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  auditLogs   AuditLog[]
+}
+
+enum MembershipStatus {
+  ACTIVE
+  PENDING
+  INACTIVE
+}
+
+/// Pertenencia de un User a una Organization, con el rol que tiene en ese
+/// contexto. Reemplaza los campos organizationId/roleId que antes vivían
+/// directo en User: un User puede pertenecer a varias organizaciones, cada
+/// una con su propio Role y su propio estado de membresía.
+///
+/// El vínculo opcional con Employee también se movió acá (antes vivía en
+/// User): un mismo User puede ser empleado en una organización y no serlo
+/// en otra, así que la relación laboral queda scopeada a la membresía, no
+/// a la cuenta global.
+///
+/// La "organización activa" de una sesión NO se persiste acá: es
+/// responsabilidad de la capa de auth/sesión (a implementar más adelante),
+/// que la resuelve eligiendo entre las Membership ACTIVE del usuario al
+/// iniciar sesión.
+model Membership {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  estado MembershipStatus @default(ACTIVE)
+
+  employeeId String?   @unique
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+enum EmployeeStatus {
+  ACTIVO
+  VACACIONES
+  LICENCIA
+  INACTIVO
+}
+
+/// Legajo interno del estudio. Puede existir sin cuenta de acceso (User).
+model Employee {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  slug                 String
+  nombre               String
+  cargo                String
+  area                 String
+  estado               EmployeeStatus @default(ACTIVO)
+  valorHoraInterno     Decimal        @db.Decimal(14, 2)
+  email                String
+  telefono             String
+  cuil                 String
+  direccion            String
+  condicionContractual String
+  fechaIngreso         DateTime       @db.Date
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  membership          Membership?
+  clientesAsignados   Client[]             @relation("ClientResponsable")
+  hourEntries         HourEntry[]
+  collectionFollowUps CollectionFollowUp[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// Roles y permisos (persistentes, editables por organización)
+// ---------------------------------------------------------------------------
+
+enum RoleName {
+  ADMINISTRADOR
+  SUPERVISOR
+  CONTADOR
+  COLABORADOR
+}
+
+/// Rol dentro de una organización. Se seedean los 4 roles base por
+/// organización (Sprint 8.2); el nombre queda fijo por ahora, pero la matriz
+/// de permisos (vía RolePermission) es editable por organización desde
+/// Configuración.
+model Role {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  nombre      RoleName
+  descripcion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships     Membership[]
+  rolePermissions RolePermission[]
+
+  @@unique([organizationId, nombre])
+  @@index([organizationId])
+}
+
+enum SettingsModule {
+  DASHBOARD
+  CLIENTES
+  FACTURACION
+  COBRANZAS
+  EMPLEADOS
+  HORAS
+  REPORTES
+  CONFIGURACION
+}
+
+enum PermissionAction {
+  VER
+  CREAR
+  EDITAR
+  ELIMINAR
+}
+
+/// Catálogo global y fijo de permisos posibles (módulo × acción). No
+/// pertenece a una Organization: es un catálogo de la aplicación, no un dato
+/// de negocio de un tenant.
+model Permission {
+  id     String           @id @default(cuid())
+  module SettingsModule
+  action PermissionAction
+
+  rolePermissions RolePermission[]
+
+  @@unique([module, action])
+}
+
+/// Matriz de permisos real y editable: qué Permission tiene otorgado cada
+/// Role. Reemplaza la constante `rolePermissions` hardcodeada del mock.
+model RolePermission {
+  id String @id @default(cuid())
+
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  allowed Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roleId, permissionId])
+}
+
+// ---------------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------------
+
+enum ClientStatus {
+  ACTIVO
+  MORA
+  PAUSADO
+  INACTIVO
+}
+
+model Client {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  slug               String
+  razonSocial        String
+  nombreComercial    String
+  cuit               String
+  condicionFiscal    String
+  email              String
+  telefono           String
+  estado             ClientStatus @default(ACTIVO)
+  condicionPago      String
+  valorHora          Decimal      @db.Decimal(14, 2)
+  facturacionMensual Decimal      @db.Decimal(14, 2)
+  fechaAlta          DateTime     @db.Date
+
+  // FK por id, no por nombre (a diferencia del mock original).
+  responsableInternoId String?
+  responsableInterno   Employee? @relation("ClientResponsable", fields: [responsableInternoId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hourEntries HourEntry[]
+  invoices    Invoice[]
+
+  // Nota de diseño: `deudaPendiente` NO se guarda acá. Se calcula sumando
+  // `Invoice.total - sum(Payment.monto)` de las facturas no anuladas del
+  // cliente, para que nunca pueda desincronizarse de los pagos reales.
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([organizationId, estado])
+}
+
+// ---------------------------------------------------------------------------
+// Horas
+// ---------------------------------------------------------------------------
+
+enum HourEntryStatus {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  FACTURADA
+}
+
+model HourEntry {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+
+  fecha       DateTime        @db.Date
+  proyecto    String
+  horas       Decimal         @db.Decimal(5, 2)
+  descripcion String
+  estado      HourEntryStatus @default(PENDIENTE)
+
+  // Snapshot de tarifas al momento de la carga (no se recalculan si cambia
+  // el valor hora vigente del empleado/cliente más adelante).
+  valorHoraInterno Decimal @db.Decimal(14, 2)
+  valorHoraCliente Decimal @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // La relación con Invoice ya no es directa: se resuelve a través de
+  // InvoiceItem.hourEntryId, que es la fuente de verdad de qué factura (si
+  // alguna) incluye esta hora. Evita mantener dos punteros que podrían
+  // desincronizarse (ver también la nota de diseño en InvoiceItem).
+  invoiceItem InvoiceItem?
+
+  @@index([organizationId])
+  @@index([organizationId, fecha])
+  @@index([employeeId])
+  @@index([clientId])
+}
+
+// ---------------------------------------------------------------------------
+// Facturación
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  BORRADOR
+  EMITIDA
+  PAGADA
+  VENCIDA
+  ANULADA
+}
+
+model Invoice {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
+
+  // Numeración: ver InvoiceCounter. `numero` es el string formateado
+  // (ej. "A 0003-00141"), fijado en el momento de emisión y nunca
+  // recalculado — es un dato legal/contable inmutable, no derivado.
+  puntoVenta       String
+  numeroSecuencial Int
+  numero           String
+
+  concepto         String
+  fechaEmision     DateTime?     @db.Date
+  fechaVencimiento DateTime?     @db.Date
+  subtotal         Decimal       @db.Decimal(14, 2)
+  iva              Decimal       @db.Decimal(14, 2)
+  total            Decimal       @db.Decimal(14, 2)
+  estado           InvoiceStatus @default(BORRADOR)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items              InvoiceItem[]
+  payments           Payment[]
+  collectionFollowUp CollectionFollowUp?
+
+  // Nota de diseño: `saldoPendiente` NO se guarda acá. Se calcula como
+  // `total - sum(Payment.monto)` para permitir pagos parciales sin riesgo
+  // de que el saldo guardado quede desactualizado.
+  //
+  // Nota de diseño (Sprint 8.1b): `subtotal`/`iva`/`total` acá son el
+  // snapshot fijado al emitir la factura. Deberían reconciliar con la suma
+  // de `InvoiceItem.subtotal`/`montoIva`/`total`, pero esa reconciliación
+  // es responsabilidad de la capa de aplicación cuando se conecte el
+  // módulo de Facturación a Prisma — no se resuelve en este schema.
+
+  @@unique([organizationId, puntoVenta, numeroSecuencial])
+  @@index([organizationId])
+  @@index([organizationId, estado])
+  @@index([clientId])
+}
+
+/// Concepto individual (línea) de una factura. Reemplaza el enfoque de una
+/// Invoice con un solo `concepto` de texto libre por una lista de ítems con
+/// su propio importe, cantidad y alícuota.
+///
+/// Puede originarse en una HourEntry (horas cargadas y aprobadas) o ser un
+/// ítem manual (ajuste, honorario fijo, gasto reintegrable, etc.) — por eso
+/// `hourEntryId` es opcional. Cuando existe, InvoiceItem es la fuente de
+/// verdad de la relación HourEntry↔Invoice (ver nota en HourEntry); el
+/// `@unique` en `hourEntryId` impide facturar la misma hora dos veces.
+///
+/// Los valores acá son un snapshot al momento de facturar: si después
+/// cambia una tarifa (Employee.valorHoraInterno, Client.valorHora,
+/// BillingSettings.ivaPorDefecto), este ítem no se recalcula.
+model InvoiceItem {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  orden       Int
+  descripcion String
+
+  cantidad       Decimal @db.Decimal(10, 2)
+  precioUnitario Decimal @db.Decimal(14, 2)
+  alicuotaIva    Decimal @db.Decimal(5, 2)
+  subtotal       Decimal @db.Decimal(14, 2)
+  montoIva       Decimal @db.Decimal(14, 2)
+  total          Decimal @db.Decimal(14, 2)
+
+  hourEntryId String?    @unique
+  hourEntry   HourEntry? @relation(fields: [hourEntryId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([invoiceId])
+}
+
+/// Contador atómico de numeración por organización + punto de venta.
+/// Se incrementa dentro de una transacción junto con la creación de la
+/// Invoice (SELECT ... FOR UPDATE / increment atómico de Prisma), y el
+/// @@unique de Invoice sobre (organizationId, puntoVenta, numeroSecuencial)
+/// actúa como segunda barrera contra duplicados si dos requests compitieran.
+model InvoiceCounter {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  puntoVenta String
+  lastNumber Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, puntoVenta])
+}
+
+enum PaymentMethod {
+  TRANSFERENCIA
+  EFECTIVO
+  CHEQUE
+  TARJETA
+  OTRO
+}
+
+/// Un cobro real contra una factura. Una Invoice puede tener varios Payment
+/// (pagos parciales); el saldo pendiente se deriva de la suma de estos.
+model Payment {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  monto     Decimal       @db.Decimal(14, 2)
+  fecha     DateTime      @db.Date
+  medioPago PaymentMethod
+  notas     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Cobranzas
+// ---------------------------------------------------------------------------
+
+enum CollectionChannel {
+  LLAMADA
+  WHATSAPP
+  EMAIL
+}
+
+/// Seguimiento real de cobranza de una factura. El estado mostrado en el
+/// módulo Cobranzas (al día / por vencer / vencida / crítica) sigue
+/// calculándose en runtime a partir de fechaVencimiento + saldo pendiente,
+/// igual que en el mock — lo que cambia es que `enSeguimiento` y las notas
+/// de gestión ahora se persisten en vez de vivir en un Set hardcodeado.
+model CollectionFollowUp {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  invoiceId String  @unique
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  enSeguimiento       Boolean            @default(false)
+  asignadoAId         String?
+  asignadoA           Employee?          @relation(fields: [asignadoAId], references: [id])
+  notas               String?
+  canalUtilizado      CollectionChannel?
+  fechaUltimoContacto DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// Configuración por organización
+// ---------------------------------------------------------------------------
+
+model BillingSettings {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  ivaPorDefecto           Int    @default(21)
+  moneda                  String @default("ARS — Peso argentino")
+  condicionPagoPorDefecto String
+  diasVencimiento         Int
+  puntoVenta              String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HoursSettings {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  jornadaEstandarHoras          Decimal @db.Decimal(4, 2)
+  valorHoraInternoPorDefecto    Decimal @db.Decimal(14, 2)
+  valorHoraFacturablePorDefecto Decimal @db.Decimal(14, 2)
+  objetivoProductividad         Int
+  permitirHorasAdicionales      Boolean @default(true)
+  requerirAprobacionHoras       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum SystemPreferenceKey {
+  NOTIFICAR_FACTURAS_VENCIDAS
+  ALERTAR_CLIENTES_EN_MORA
+  RECORDATORIO_CARGA_HORAS
+  RESUMEN_DIARIO
+  SUGERENCIAS_IA
+}
+
+model SystemPreference {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  key   SystemPreferenceKey
+  value Boolean
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, key])
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría
+// ---------------------------------------------------------------------------
+
+/// Registro de trazabilidad de cambios relevantes sobre entidades de
+/// negocio. Append-only por diseño (sin `updatedAt`: un registro de
+/// auditoría no se edita, se agrega uno nuevo). `userId` es opcional para
+/// permitir registrar acciones sin actor humano (jobs, procesos internos).
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  action     String
+  entityType String
+  entityId   String
+
+  previousData Json?
+  newData      Json?
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([organizationId, entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
