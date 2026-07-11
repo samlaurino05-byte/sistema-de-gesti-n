@@ -21,39 +21,65 @@ import { EmployeeWorkspaceHeader } from "@/components/employees/EmployeeWorkspac
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
 import {
-  employees,
   employeeQuickActions,
-  getAssignedClients,
   getEmployeeAiInsights,
-  getEmployeeById,
   getEmployeeDocuments,
   getEmployeeObservations,
   getEmployeeTimeline,
 } from "@/lib/mock/employees";
 import { getHoursForEmployee, summarizeHours } from "@/lib/mock/hours";
+import { getEmployeeBySlugForOrganization } from "@/lib/data/employees";
+import { getClientsAssignedToEmployee } from "@/lib/data/clients";
+import { requireActiveSession } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export function generateStaticParams() {
-  return employees.map((employee) => ({ id: employee.id }));
-}
+// Sin generateStaticParams: mismo motivo que Clientes (Sprint 8.3) — el
+// empleado se resuelve contra la organización activa de la sesión, que
+// solo existe en request time, no en build time.
 
 export default async function EmployeeWorkspacePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const employee = getEmployeeById(id);
+  const session = await requireActiveSession();
+
+  let employee;
+  let assignedClients;
+  try {
+    employee = await getEmployeeBySlugForOrganization(id, session.organizationId);
+    assignedClients = employee ? await getClientsAssignedToEmployee(employee.id, session.organizationId) : [];
+  } catch (error) {
+    console.error(`No se pudo cargar el empleado "${id}":`, error);
+    return (
+      <>
+        <Header title="Empleados" subtitle="Workspace del empleado" />
+        <main className="flex-1 p-4 sm:p-6">
+          <Link
+            href="/employees"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver a Empleados
+          </Link>
+          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-10 text-center">
+            <p className="text-sm font-medium text-slate-600">No se pudo cargar este empleado</p>
+            <p className="mt-1 text-xs text-slate-400">Probá recargar la página en unos segundos.</p>
+          </div>
+        </main>
+      </>
+    );
+  }
 
   if (!employee) {
     notFound();
   }
 
-  const assignedClients = getAssignedClients(employee);
   const hourEntries = getHoursForEmployee(employee.id);
   const hoursSummary = summarizeHours(hourEntries);
   const timeline = getEmployeeTimeline(employee);
   const documents = getEmployeeDocuments(employee);
   const observations = getEmployeeObservations(employee);
-  const aiSuggestions = getEmployeeAiInsights(employee).map((text) => ({ text }));
+  const aiSuggestions = getEmployeeAiInsights(employee, assignedClients.length).map((text) => ({ text }));
 
   return (
     <>

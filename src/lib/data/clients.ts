@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ClientStatus as PrismaClientStatus } from "@/generated/prisma/client";
-import { getClientById as getMockClientById, type Client as ClientDTO, type ClientStatus } from "@/lib/mock/clients";
+import type { Client as ClientDTO, ClientStatus } from "@/lib/mock/clients";
 import { getInvoicesForClient, summarizeInvoices } from "@/lib/mock/invoices";
 
 // Capa central de acceso a datos del módulo Clientes (Sprint 8.3). Todo
@@ -45,16 +45,16 @@ function resolveDeudaPendiente(slug: string): number {
   return summary.pendienteCobro + summary.vencido;
 }
 
-// El módulo de Empleados todavía no está migrado a Prisma, así que
-// `responsableInternoId` queda en null para todos los clientes seedeados
-// (ver prisma/seed.ts). En vez de inventar una relación falsa, mostramos el
-// nombre del mock como texto informativo hasta que Empleados se migre y la
-// FK pueda resolverse de verdad.
+// Sprint 8.4: Empleados ya está migrado y el seed resolvió
+// responsableInternoId para los 12 clientes de la cartera demo (ver
+// prisma/seed.ts) matcheando por nombre contra los Employee reales. Se
+// prioriza siempre esa relación real. El fallback a texto fijo queda solo
+// para el caso legítimo de un cliente sin responsable asignado en DB (no
+// para "todavía no migramos Empleados" — eso ya no aplica) — no hay ningún
+// cliente en ese caso hoy, pero la UI debe seguir siendo correcta si en el
+// futuro se da de alta un cliente sin responsableInternoId.
 function resolveResponsableInterno(row: ClientRow): string {
-  if (row.responsableInterno) {
-    return row.responsableInterno.nombre;
-  }
-  return getMockClientById(row.slug)?.responsableInterno ?? "Sin responsable asignado";
+  return row.responsableInterno?.nombre ?? "Sin responsable asignado";
 }
 
 function toClientDTO(row: ClientRow): ClientDTO {
@@ -96,4 +96,22 @@ export async function getClientBySlugForOrganization(
   });
 
   return row ? toClientDTO(row) : null;
+}
+
+// Sprint 8.4: usado por el workspace de Empleados ("Clientes asignados").
+// Filtra por la relación real (Client.responsableInternoId -> Employee),
+// no por coincidencia de texto — reemplaza el matching por nombre que
+// hacía el mock (getAssignedClients). Se filtra por el slug del empleado
+// dentro de la misma organización, sin exponer su id interno de Prisma.
+export async function getClientsAssignedToEmployee(
+  employeeSlug: string,
+  organizationId: string
+): Promise<ClientDTO[]> {
+  const rows = await prisma.client.findMany({
+    where: { organizationId, responsableInterno: { organizationId, slug: employeeSlug } },
+    include: CLIENT_INCLUDE,
+    orderBy: { razonSocial: "asc" },
+  });
+
+  return rows.map(toClientDTO);
 }

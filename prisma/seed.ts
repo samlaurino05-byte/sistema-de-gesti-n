@@ -1,5 +1,12 @@
 import "dotenv/config";
-import { PrismaClient, RoleName, SettingsModule, PermissionAction, ClientStatus } from "../src/generated/prisma/client";
+import {
+  PrismaClient,
+  RoleName,
+  SettingsModule,
+  PermissionAction,
+  ClientStatus,
+  EmployeeStatus,
+} from "../src/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { hashPassword } from "../src/lib/auth/password";
 import {
@@ -11,16 +18,18 @@ import {
   type UserRole,
 } from "../src/lib/mock/settings";
 import { clients as mockClients, type ClientStatus as MockClientStatus } from "../src/lib/mock/clients";
+import { employees as mockEmployees, type EmployeeStatus as MockEmployeeStatus } from "../src/lib/mock/employees";
 
-// Seed idempotente de datos base para Sprint 8.2 (autenticación). Se puede
-// correr las veces que hagan falta: todo usa upsert sobre las mismas claves
-// únicas del schema, nunca crea duplicados.
+// Seed idempotente de datos base (Sprint 8.2 autenticación, 8.3 Clientes,
+// 8.4 Empleados). Se puede correr las veces que hagan falta: todo usa
+// upsert sobre las mismas claves únicas del schema, nunca crea duplicados.
 //
-// Alcance deliberadamente mínimo: organización, roles, catálogo de
-// permisos, matriz de RolePermission y un único usuario administrador con
-// su Membership. NO crea Client/Employee/Invoice/HourEntry ni ningún otro
-// dato de negocio — eso sigue viviendo en los mocks hasta que se migre cada
-// módulo (fuera de alcance de este sprint).
+// Crea: organización, roles, catálogo de permisos, matriz de
+// RolePermission, un usuario administrador con su Membership, los
+// Employee y Client de la cartera mock (con responsableInternoId
+// resuelto cuando corresponde). NO crea Invoice/HourEntry ni ningún otro
+// dato de negocio — esos módulos siguen sin migrar (fuera de alcance de
+// este sprint).
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -75,6 +84,14 @@ const CLIENT_STATUS_BY_MOCK_KEY: Record<MockClientStatus, ClientStatus> = {
   mora: ClientStatus.MORA,
   pausado: ClientStatus.PAUSADO,
   inactivo: ClientStatus.INACTIVO,
+};
+
+// Sprint 8.4: mismo mapeo para el estado de Employee.
+const EMPLOYEE_STATUS_BY_MOCK_KEY: Record<MockEmployeeStatus, EmployeeStatus> = {
+  activo: EmployeeStatus.ACTIVO,
+  vacaciones: EmployeeStatus.VACACIONES,
+  licencia: EmployeeStatus.LICENCIA,
+  inactivo: EmployeeStatus.INACTIVO,
 };
 
 const adapter = new PrismaNeon({ connectionString: DATABASE_URL });
@@ -153,6 +170,60 @@ async function main() {
   }
   console.log(`RolePermission: ${rolePermissionCount}`);
 
+  // Sprint 8.4: alta de los empleados de la cartera mock en la Organization
+  // de demostración. Se preserva el `id` del mock como `slug` (las URLs
+  // /employees/<slug> no cambian). Todos los campos del mock tienen
+  // representación directa en el modelo Employee — no hizo falta tocar el
+  // schema (ver comparación en el resumen del sprint).
+  const employeesByNombre = new Map<string, { id: string }[]>();
+  let employeeCount = 0;
+  for (const mockEmployee of mockEmployees) {
+    const employee = await prisma.employee.upsert({
+      where: { organizationId_slug: { organizationId: organization.id, slug: mockEmployee.id } },
+      update: {
+        nombre: mockEmployee.nombre,
+        cargo: mockEmployee.cargo,
+        area: mockEmployee.area,
+        estado: EMPLOYEE_STATUS_BY_MOCK_KEY[mockEmployee.estado],
+        valorHoraInterno: mockEmployee.valorHoraInterno,
+        email: mockEmployee.email,
+        telefono: mockEmployee.telefono,
+        cuil: mockEmployee.cuil,
+        direccion: mockEmployee.direccion,
+        condicionContractual: mockEmployee.condicionContractual,
+        fechaIngreso: new Date(mockEmployee.fechaIngreso),
+      },
+      create: {
+        organizationId: organization.id,
+        slug: mockEmployee.id,
+        nombre: mockEmployee.nombre,
+        cargo: mockEmployee.cargo,
+        area: mockEmployee.area,
+        estado: EMPLOYEE_STATUS_BY_MOCK_KEY[mockEmployee.estado],
+        valorHoraInterno: mockEmployee.valorHoraInterno,
+        email: mockEmployee.email,
+        telefono: mockEmployee.telefono,
+        cuil: mockEmployee.cuil,
+        direccion: mockEmployee.direccion,
+        condicionContractual: mockEmployee.condicionContractual,
+        fechaIngreso: new Date(mockEmployee.fechaIngreso),
+      },
+    });
+    employeeCount += 1;
+    employeesByNombre.set(mockEmployee.nombre, [...(employeesByNombre.get(mockEmployee.nombre) ?? []), employee]);
+  }
+  console.log(`Empleados: ${employeeCount}`);
+
+  // Resuelve un nombre de responsable/empleado a un Employee real SOLO
+  // cuando hay exactamente una coincidencia por nombre dentro de la
+  // organización. Ante cero o más de una coincidencia, no se vincula
+  // (evita relaciones ambiguas o inventadas) — se usa tanto para
+  // Membership.employeeId como para Client.responsableInternoId más abajo.
+  function resolveUniqueEmployeeIdByNombre(nombre: string): string | null {
+    const matches = employeesByNombre.get(nombre);
+    return matches && matches.length === 1 ? matches[0].id : null;
+  }
+
   const passwordHash = await hashPassword(SEED_ADMIN_PASSWORD);
   const adminUser = await prisma.user.upsert({
     where: { email: SEED_ADMIN_EMAIL },
@@ -166,36 +237,53 @@ async function main() {
   });
   console.log(`User administrador: ${adminUser.email}`);
 
+  // El User admin (Rodrigo Méndez) y el Employee "rodrigo-mendez" del mock
+  // comparten nombre Y email (rodrigo.mendez@estudio.com.ar) — señal
+  // inequívoca de que representan la misma persona. Se vincula
+  // Membership.employeeId a ese Employee ya creado arriba; no se inventa
+  // cargo, tarifa ni condición laboral, se usan los mismos datos del mock
+  // que ya se migraron como Employee. Si en el futuro esa coincidencia
+  // dejara de ser 1:1 (ej. dos empleados con el mismo nombre), queda en
+  // null automáticamente.
+  const rodrigoEmployeeMock = mockEmployees.find((employee) => employee.nombre === SEED_ADMIN_NOMBRE);
+  const adminEmployeeId =
+    rodrigoEmployeeMock?.email === SEED_ADMIN_EMAIL ? resolveUniqueEmployeeIdByNombre(SEED_ADMIN_NOMBRE) : null;
+
   const adminRole = rolesByName.get(RoleName.ADMINISTRADOR)!;
   const membership = await prisma.membership.upsert({
     where: { userId_organizationId: { userId: adminUser.id, organizationId: organization.id } },
-    update: { roleId: adminRole.id, estado: "ACTIVE" },
+    update: { roleId: adminRole.id, estado: "ACTIVE", employeeId: adminEmployeeId },
     create: {
       userId: adminUser.id,
       organizationId: organization.id,
       roleId: adminRole.id,
       estado: "ACTIVE",
+      employeeId: adminEmployeeId,
     },
   });
-  console.log(`Membership: ${membership.id} (estado=${membership.estado})`);
-
-  // Nota: no se crea un Employee para este usuario. El seed está acotado a
-  // lo necesario para autenticación (Sprint 8.2); armar un legajo de
-  // Employee coherente implica datos de negocio (cargo, área, tarifa
-  // horaria, condición contractual, etc.) que pertenecen al módulo de
-  // Empleados, todavía no migrado a Prisma en este sprint. La relación
-  // Membership.employeeId queda en null hasta entonces.
+  console.log(`Membership: ${membership.id} (estado=${membership.estado}, employeeId=${membership.employeeId})`);
 
   // Sprint 8.3: alta de los clientes de la cartera mock en la Organization
   // de demostración. Se preserva el `id` del mock como `slug` (las URLs
-  // /clients/<slug> no cambian). `responsableInternoId` queda en null: el
-  // módulo de Empleados todavía no está migrado, así que no hay Employee
-  // real contra el cual resolver la FK — evitamos inventar una relación
-  // falsa (Employee mock e Employee real no comparten id). La UI resuelve
-  // el nombre a mostrar con un fallback al mock mientras tanto (ver
-  // src/lib/data/clients.ts).
+  // /clients/<slug> no cambian).
+  //
+  // Sprint 8.4: además de los datos propios, se resuelve
+  // `responsableInternoId` contra los Employee reales recién creados,
+  // matcheando por nombre (`Client.responsableInterno` del mock vs
+  // `Employee.nombre`). Solo se vincula si el nombre matchea exactamente
+  // un Employee de la organización; si no matchea ninguno o matchea más de
+  // uno, queda en null (ver resolveUniqueEmployeeIdByNombre).
   let clientCount = 0;
+  let clientesVinculados = 0;
+  const clientesSinVincular: string[] = [];
   for (const mockClient of mockClients) {
+    const responsableInternoId = resolveUniqueEmployeeIdByNombre(mockClient.responsableInterno);
+    if (responsableInternoId) {
+      clientesVinculados += 1;
+    } else {
+      clientesSinVincular.push(`${mockClient.id} (responsable mock: "${mockClient.responsableInterno}")`);
+    }
+
     await prisma.client.upsert({
       where: { organizationId_slug: { organizationId: organization.id, slug: mockClient.id } },
       update: {
@@ -210,6 +298,7 @@ async function main() {
         valorHora: mockClient.valorHora,
         facturacionMensual: mockClient.facturacionMensual,
         fechaAlta: new Date(mockClient.fechaAlta),
+        responsableInternoId,
       },
       create: {
         organizationId: organization.id,
@@ -225,11 +314,16 @@ async function main() {
         valorHora: mockClient.valorHora,
         facturacionMensual: mockClient.facturacionMensual,
         fechaAlta: new Date(mockClient.fechaAlta),
+        responsableInternoId,
       },
     });
     clientCount += 1;
   }
   console.log(`Clientes: ${clientCount}`);
+  console.log(`Clientes vinculados a Employee real: ${clientesVinculados}`);
+  if (clientesSinVincular.length > 0) {
+    console.log(`Clientes sin vincular: ${clientesSinVincular.join(", ")}`);
+  }
 
   console.log("\nSeed completado.");
 }

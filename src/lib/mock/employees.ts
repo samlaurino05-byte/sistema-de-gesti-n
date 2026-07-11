@@ -307,13 +307,16 @@ export function getEmployeeObservations(employee: Employee): EmployeeObservation
   return observations;
 }
 
-export function getEmployeeAiInsights(employee: Employee): string[] {
+// `assignedClientsCount` se recibe como parámetro (en vez de recalcularse
+// acá con getAssignedClients) para que quien llame pueda pasar el conteo
+// real de Prisma (Client.responsableInternoId) cuando esté disponible, sin
+// que este módulo dependa de la cartera mock de clientes.
+export function getEmployeeAiInsights(employee: Employee, assignedClientsCount: number): string[] {
   const insights: string[] = [];
-  const assignedClients = getAssignedClients(employee);
 
-  if (assignedClients.length > 0) {
+  if (assignedClientsCount > 0) {
     insights.push(
-      `${employee.nombre} tiene ${assignedClients.length} clientes asignados. Valor hora interno de ${formatCurrency(employee.valorHoraInterno)}.`
+      `${employee.nombre} tiene ${assignedClientsCount} clientes asignados. Valor hora interno de ${formatCurrency(employee.valorHoraInterno)}.`
     );
   } else {
     insights.push(`${employee.nombre} no tiene clientes asignados actualmente.`);
