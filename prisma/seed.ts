@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { PrismaClient, RoleName, SettingsModule, PermissionAction } from "../src/generated/prisma/client";
+import { PrismaClient, RoleName, SettingsModule, PermissionAction, ClientStatus } from "../src/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { hashPassword } from "../src/lib/auth/password";
 import {
@@ -10,6 +10,7 @@ import {
   permissionActionOrder,
   type UserRole,
 } from "../src/lib/mock/settings";
+import { clients as mockClients, type ClientStatus as MockClientStatus } from "../src/lib/mock/clients";
 
 // Seed idempotente de datos base para Sprint 8.2 (autenticación). Se puede
 // correr las veces que hagan falta: todo usa upsert sobre las mismas claves
@@ -63,6 +64,17 @@ const ACTION_BY_MOCK_KEY: Record<(typeof permissionActionOrder)[number], Permiss
   crear: PermissionAction.CREAR,
   editar: PermissionAction.EDITAR,
   eliminar: PermissionAction.ELIMINAR,
+};
+
+// Sprint 8.3: mapeo de estado de Cliente entre el mock (español/minúscula) y
+// el enum de Prisma (mayúscula). mockClients es la fuente de verdad de los
+// datos de cartera hasta que el módulo de Clientes tenga su propia UI de
+// alta/edición.
+const CLIENT_STATUS_BY_MOCK_KEY: Record<MockClientStatus, ClientStatus> = {
+  activo: ClientStatus.ACTIVO,
+  mora: ClientStatus.MORA,
+  pausado: ClientStatus.PAUSADO,
+  inactivo: ClientStatus.INACTIVO,
 };
 
 const adapter = new PrismaNeon({ connectionString: DATABASE_URL });
@@ -173,6 +185,51 @@ async function main() {
   // horaria, condición contractual, etc.) que pertenecen al módulo de
   // Empleados, todavía no migrado a Prisma en este sprint. La relación
   // Membership.employeeId queda en null hasta entonces.
+
+  // Sprint 8.3: alta de los clientes de la cartera mock en la Organization
+  // de demostración. Se preserva el `id` del mock como `slug` (las URLs
+  // /clients/<slug> no cambian). `responsableInternoId` queda en null: el
+  // módulo de Empleados todavía no está migrado, así que no hay Employee
+  // real contra el cual resolver la FK — evitamos inventar una relación
+  // falsa (Employee mock e Employee real no comparten id). La UI resuelve
+  // el nombre a mostrar con un fallback al mock mientras tanto (ver
+  // src/lib/data/clients.ts).
+  let clientCount = 0;
+  for (const mockClient of mockClients) {
+    await prisma.client.upsert({
+      where: { organizationId_slug: { organizationId: organization.id, slug: mockClient.id } },
+      update: {
+        razonSocial: mockClient.razonSocial,
+        nombreComercial: mockClient.nombreComercial,
+        cuit: mockClient.cuit,
+        condicionFiscal: mockClient.condicionFiscal,
+        email: mockClient.email,
+        telefono: mockClient.telefono,
+        estado: CLIENT_STATUS_BY_MOCK_KEY[mockClient.estado],
+        condicionPago: mockClient.condicionPago,
+        valorHora: mockClient.valorHora,
+        facturacionMensual: mockClient.facturacionMensual,
+        fechaAlta: new Date(mockClient.fechaAlta),
+      },
+      create: {
+        organizationId: organization.id,
+        slug: mockClient.id,
+        razonSocial: mockClient.razonSocial,
+        nombreComercial: mockClient.nombreComercial,
+        cuit: mockClient.cuit,
+        condicionFiscal: mockClient.condicionFiscal,
+        email: mockClient.email,
+        telefono: mockClient.telefono,
+        estado: CLIENT_STATUS_BY_MOCK_KEY[mockClient.estado],
+        condicionPago: mockClient.condicionPago,
+        valorHora: mockClient.valorHora,
+        facturacionMensual: mockClient.facturacionMensual,
+        fechaAlta: new Date(mockClient.fechaAlta),
+      },
+    });
+    clientCount += 1;
+  }
+  console.log(`Clientes: ${clientCount}`);
 
   console.log("\nSeed completado.");
 }

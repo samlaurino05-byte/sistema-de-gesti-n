@@ -23,9 +23,7 @@ import { HourTableHead } from "@/components/hours/HourTableHead";
 import { InvoiceRow } from "@/components/invoices/InvoiceRow";
 import { ClientCollectionSummary } from "@/components/collections/ClientCollectionSummary";
 import {
-  clients,
   getClientAiInsights,
-  getClientById,
   getClientCommunications,
   getClientDocuments,
   getClientTimeline,
@@ -34,17 +32,46 @@ import {
 import { getCollectionSummaryForClient } from "@/lib/mock/collections";
 import { getHoursForClient, summarizeHours } from "@/lib/mock/hours";
 import { getInvoicesForClient, invoices, summarizeInvoices } from "@/lib/mock/invoices";
+import { getClientBySlugForOrganization } from "@/lib/data/clients";
+import { requireActiveSession } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export function generateStaticParams() {
-  return clients.map((client) => ({ id: client.id }));
-}
+// Sin generateStaticParams: los clientes ahora viven en Prisma, scopeados
+// por organización activa. Esa organización solo se conoce en request time
+// (sesión del usuario), no en build time, así que prerenderizar rutas
+// específicas acá filtraría datos entre organizaciones o fallaría sin
+// sesión disponible durante el build.
 
 export default async function ClientWorkspacePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const client = getClientById(id);
+  const session = await requireActiveSession();
+
+  let client;
+  try {
+    client = await getClientBySlugForOrganization(id, session.organizationId);
+  } catch (error) {
+    console.error(`No se pudo cargar el cliente "${id}":`, error);
+    return (
+      <>
+        <Header title="Clientes" subtitle="Workspace del cliente" />
+        <main className="flex-1 p-4 sm:p-6">
+          <Link
+            href="/clients"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver a Clientes
+          </Link>
+          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-10 text-center">
+            <p className="text-sm font-medium text-slate-600">No se pudo cargar este cliente</p>
+            <p className="mt-1 text-xs text-slate-400">Probá recargar la página en unos segundos.</p>
+          </div>
+        </main>
+      </>
+    );
+  }
 
   if (!client) {
     notFound();
