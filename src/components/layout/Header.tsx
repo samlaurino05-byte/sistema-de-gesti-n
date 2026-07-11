@@ -1,13 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
+import { signOut } from "next-auth/react";
 import { Bell, ChevronDown, LogOut, Menu, Search, Settings } from "lucide-react";
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { useActiveSession } from "@/components/layout/active-session-context";
+
+function initialsFrom(nombre: string): string {
+  const parts = nombre.trim().split(/\s+/);
+  const initials = parts.length > 1 ? [parts[0], parts[parts.length - 1]] : [parts[0]];
+  return initials.map((part) => part[0]?.toUpperCase() ?? "").join("");
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  ADMINISTRADOR: "Administrador",
+  SUPERVISOR: "Supervisor",
+  CONTADOR: "Contador",
+  COLABORADOR: "Colaborador",
+};
 
 export function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   const { openMobile } = useSidebar();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isSigningOut, startSignOutTransition] = useTransition();
+  const session = useActiveSession();
+
+  function handleSignOut() {
+    startSignOutTransition(async () => {
+      await signOut({ callbackUrl: "/login" });
+    });
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
@@ -55,11 +78,13 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
             className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-100"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700">
-              U
+              {initialsFrom(session.nombre)}
             </div>
             <div className="hidden text-left text-sm sm:block">
-              <p className="font-medium leading-tight text-slate-900">Usuario Demo</p>
-              <p className="text-xs leading-tight text-slate-400">Administrador</p>
+              <p className="font-medium leading-tight text-slate-900">{session.nombre}</p>
+              <p className="text-xs leading-tight text-slate-400">
+                {ROLE_LABELS[session.roleNombre] ?? session.roleNombre} · {session.organizationNombre}
+              </p>
             </div>
             <ChevronDown className="hidden h-3.5 w-3.5 text-slate-400 sm:block" />
           </button>
@@ -69,8 +94,13 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
               <div className="fixed inset-0 z-40" onClick={() => setIsUserMenuOpen(false)} />
               <div
                 role="menu"
-                className="absolute right-0 top-full z-50 mt-2 w-52 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+                className="absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
               >
+                <div className="px-2.5 py-2">
+                  <p className="truncate text-sm font-medium text-slate-900">{session.nombre}</p>
+                  <p className="truncate text-xs text-slate-400">{session.email}</p>
+                </div>
+                <div className="my-1 h-px bg-slate-100" />
                 <Link
                   href="/settings"
                   onClick={() => setIsUserMenuOpen(false)}
@@ -81,12 +111,12 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
                 </Link>
                 <button
                   type="button"
-                  disabled
-                  title="Próximamente"
-                  className="flex w-full cursor-not-allowed items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-400"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <LogOut className="h-4 w-4" />
-                  Cerrar sesión
+                  <LogOut className="h-4 w-4 text-slate-400" />
+                  {isSigningOut ? "Cerrando sesión..." : "Cerrar sesión"}
                 </button>
               </div>
             </>
