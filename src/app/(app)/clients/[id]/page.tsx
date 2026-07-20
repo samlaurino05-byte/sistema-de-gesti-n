@@ -234,7 +234,33 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
               {clientInvoices.length > 0 ? (
                 <div className="divide-y divide-slate-100">
                   {clientInvoices.map((invoice) => (
-                    <InvoiceRow key={invoice.id} invoice={invoice} showClient={false} />
+                    // Facturación (mock) sigue sin migrar acá — fuera de
+                    // alcance de Sprint 8.6A, que solo migró /invoices. Con
+                    // showClient={false} InvoiceRow no llega a renderizar
+                    // `cliente`, pero el tipo lo exige: se arma con los
+                    // datos del cliente que esta página ya tiene resueltos
+                    // (Prisma), sin tocar el mock de Facturación.
+                    <InvoiceRow
+                      key={invoice.id}
+                      invoice={{
+                        id: invoice.id,
+                        numero: invoice.numero,
+                        concepto: invoice.concepto,
+                        fechaEmision: invoice.fechaEmision,
+                        fechaVencimiento: invoice.fechaVencimiento,
+                        subtotal: invoice.subtotal,
+                        iva: invoice.iva,
+                        total: invoice.total,
+                        saldoPendiente: invoice.saldoPendiente,
+                        estado: invoice.estado,
+                        cliente: {
+                          nombreComercial: client.nombreComercial,
+                          razonSocial: client.razonSocial,
+                          cuit: client.cuit,
+                        },
+                      }}
+                      showClient={false}
+                    />
                   ))}
                 </div>
               ) : (

@@ -8,7 +8,6 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { getClientById } from "@/lib/mock/clients";
 import { getHourEntryMetrics, hourEntries, type HourEntry } from "@/lib/mock/hours";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -257,7 +256,13 @@ export type InvoiceTimelineEntry = {
   tone: "default" | "success" | "warning" | "danger";
 };
 
-export function getInvoiceTimeline(invoice: Invoice): InvoiceTimelineEntry[] {
+// Sprint 8.6A: el parámetro se relaja a `Pick<...>` (en vez de `Invoice`
+// completo) para que también acepte el DTO de src/lib/data/invoices.ts, que
+// ya no carga `clientId`/`hourEntryIds` — esta función nunca los usó, solo
+// leía campos propios de la factura.
+export function getInvoiceTimeline(
+  invoice: Pick<Invoice, "fechaEmision" | "estado" | "numero" | "total" | "fechaVencimiento" | "saldoPendiente">
+): InvoiceTimelineEntry[] {
   const entries: InvoiceTimelineEntry[] = [
     {
       id: "creacion",
@@ -313,10 +318,17 @@ export function getInvoiceTimeline(invoice: Invoice): InvoiceTimelineEntry[] {
   return entries;
 }
 
-export function getInvoiceAiInsights(invoice: Invoice): string[] {
+// Sprint 8.6A: `clientName`/`linkedHours` pasan a ser parámetros en vez de
+// resolverse acá adentro vía `getClientById`/`getInvoiceHourEntries` — el
+// llamador (la página, con datos ya resueltos por src/lib/data/invoices.ts)
+// es quien los provee. Misma lógica y mismos textos, sin lookup oculto al
+// mock de Clientes/Horas.
+export function getInvoiceAiInsights(
+  invoice: Pick<Invoice, "numero" | "estado" | "fechaVencimiento">,
+  clientName: string,
+  linkedHours: HourEntry[]
+): string[] {
   const insights: string[] = [];
-  const client = getClientById(invoice.clientId);
-  const clientName = client?.nombreComercial ?? "el cliente";
 
   if (invoice.estado === "vencida") {
     insights.push(
@@ -332,7 +344,6 @@ export function getInvoiceAiInsights(invoice: Invoice): string[] {
     insights.push("Comprobante anulado. No genera saldo ni requiere seguimiento.");
   }
 
-  const linkedHours = getInvoiceHourEntries(invoice);
   if (linkedHours.length > 0) {
     const totalHoras = linkedHours.reduce((sum, entry) => sum + entry.horas, 0);
     const margen = linkedHours.reduce((sum, entry) => sum + getHourEntryMetrics(entry).margen, 0);

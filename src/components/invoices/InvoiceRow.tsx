@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
-import { getClientById } from "@/lib/mock/clients";
-import type { Invoice } from "@/lib/mock/invoices";
+import type { InvoiceListItem } from "@/lib/data/invoices";
 import { cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 
-export function InvoiceRow({ invoice, showClient = true }: { invoice: Invoice; showClient?: boolean }) {
-  const client = getClientById(invoice.clientId);
+export function InvoiceRow({ invoice, showClient = true }: { invoice: InvoiceListItem; showClient?: boolean }) {
+  const { cliente } = invoice;
 
   return (
     <Link
@@ -19,14 +18,12 @@ export function InvoiceRow({ invoice, showClient = true }: { invoice: Invoice; s
       <div className="flex min-w-0 items-center gap-3">
         {showClient && (
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-xs font-semibold text-indigo-700">
-            {getInitials(client?.nombreComercial ?? "??")}
+            {getInitials(cliente.nombreComercial)}
           </div>
         )}
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-slate-900">{invoice.numero}</p>
-          <p className="truncate text-xs text-slate-500">
-            {showClient ? client?.nombreComercial ?? "Cliente no encontrado" : invoice.concepto}
-          </p>
+          <p className="truncate text-xs text-slate-500">{showClient ? cliente.nombreComercial : invoice.concepto}</p>
         </div>
       </div>
 

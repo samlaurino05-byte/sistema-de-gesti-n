@@ -10,42 +10,80 @@ import { InvoiceWorkspaceHeader } from "@/components/invoices/InvoiceWorkspaceHe
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
 import { CollectionStatusBadge } from "@/components/collections/CollectionStatusBadge";
-import { getClientById } from "@/lib/mock/clients";
 import { getCollectionForInvoice, suggestedChannelLabels } from "@/lib/mock/collections";
-import {
-  getInvoiceAiInsights,
-  getInvoiceById,
-  getInvoiceHourEntries,
-  getInvoiceTimeline,
-  invoiceQuickActions,
-  invoices,
-} from "@/lib/mock/invoices";
+import { getInvoiceAiInsights, getInvoiceTimeline, invoiceQuickActions, type Invoice } from "@/lib/mock/invoices";
+import { getInvoiceBySlugForOrganization } from "@/lib/data/invoices";
+import { requireActiveSession } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export function generateStaticParams() {
-  return invoices.map((invoice) => ({ id: invoice.id }));
-}
+// Sin generateStaticParams: mismo motivo que Clientes/Empleados/Horas
+// (Sprints 8.3-8.5A) — la factura se resuelve contra la organización
+// activa de la sesión, que solo existe en request time, no en build time.
+// Antes de Sprint 8.6A esta página prerenderizaba todas las facturas del
+// mock sin ningún chequeo de sesión ni de organización; se corrige acá.
 
 export default async function InvoiceWorkspacePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const invoice = getInvoiceById(id);
+  const session = await requireActiveSession();
+
+  let invoice;
+  try {
+    invoice = await getInvoiceBySlugForOrganization(session.organizationId, id);
+  } catch (error) {
+    console.error(`No se pudo cargar la factura "${id}":`, error);
+    return (
+      <>
+        <Header title="Facturación" subtitle="Workspace de factura" />
+        <main className="flex-1 p-4 sm:p-6">
+          <Link
+            href="/invoices"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver a Facturación
+          </Link>
+          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-10 text-center">
+            <p className="text-sm font-medium text-slate-600">No se pudo cargar esta factura</p>
+            <p className="mt-1 text-xs text-slate-400">Probá recargar la página en unos segundos.</p>
+          </div>
+        </main>
+      </>
+    );
+  }
 
   if (!invoice) {
     notFound();
   }
 
-  const client = getClientById(invoice.clientId);
-
-  if (!client) {
-    notFound();
-  }
-
   const timeline = getInvoiceTimeline(invoice);
-  const hourEntries = getInvoiceHourEntries(invoice);
-  const aiSuggestions = getInvoiceAiInsights(invoice).map((text) => ({ text }));
-  const collection = getCollectionForInvoice(invoice);
+  const aiSuggestions = getInvoiceAiInsights(invoice, invoice.cliente.nombreComercial, invoice.hourEntries).map(
+    (text) => ({ text })
+  );
+
+  // Cobranzas sigue sin migrar (fuera de alcance de Sprint 8.6A): su
+  // función de enriquecimiento (getCollectionForInvoice) todavía espera la
+  // forma completa del `Invoice` del mock, incluido `clientId` y
+  // `hourEntryIds` (que ya no existen en el DTO de Facturación real). Se
+  // arma acá un objeto que satisface esa forma con los datos que
+  // src/lib/data/invoices.ts ya resolvió — no se inventa ningún valor;
+  // `hourEntryIds` queda vacío porque esa función nunca lo usa.
+  const collectionInvoiceShim: Invoice = {
+    id: invoice.id,
+    numero: invoice.numero,
+    clientId: invoice.cliente.id,
+    concepto: invoice.concepto,
+    fechaEmision: invoice.fechaEmision,
+    fechaVencimiento: invoice.fechaVencimiento,
+    hourEntryIds: [],
+    subtotal: invoice.subtotal,
+    iva: invoice.iva,
+    total: invoice.total,
+    saldoPendiente: invoice.saldoPendiente,
+    estado: invoice.estado,
+  };
+  const collection = getCollectionForInvoice(collectionInvoiceShim);
 
   return (
     <>
@@ -60,7 +98,7 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
           Volver a Facturación
         </Link>
 
-        <InvoiceWorkspaceHeader invoice={invoice} client={client} />
+        <InvoiceWorkspaceHeader invoice={invoice} client={invoice.cliente} />
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="Subtotal" value={formatCurrency(invoice.subtotal)} icon={FileText} tone="default" />
@@ -102,8 +140,11 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
                 <div>
                   <dt className="text-xs font-medium text-slate-400">Cliente asociado</dt>
                   <dd className="mt-0.5 text-sm text-slate-800">
-                    <Link href={`/clients/${client.id}`} className="font-medium text-indigo-600 hover:text-indigo-700">
-                      {client.nombreComercial}
+                    <Link
+                      href={`/clients/${invoice.cliente.id}`}
+                      className="font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      {invoice.cliente.nombreComercial}
                     </Link>
                   </dd>
                 </div>
@@ -122,14 +163,14 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
             <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                 <h3 className="text-sm font-semibold text-slate-900">Horas incluidas</h3>
-                <span className="text-xs text-slate-500">{hourEntries.length} registros</span>
+                <span className="text-xs text-slate-500">{invoice.hourEntries.length} registros</span>
               </div>
-              {hourEntries.length > 0 ? (
+              {invoice.hourEntries.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] border-collapse">
                     <HourTableHead showClient={false} />
                     <tbody>
-                      {hourEntries.map((entry) => (
+                      {invoice.hourEntries.map((entry) => (
                         <HourRow key={entry.id} entry={entry} showClient={false} />
                       ))}
                     </tbody>
@@ -163,7 +204,7 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
                   </div>
                 </dl>
                 <Link
-                  href={`/collections?cliente=${client.id}`}
+                  href={`/collections?cliente=${invoice.cliente.id}`}
                   className="mt-3 inline-block text-xs font-semibold text-indigo-600 hover:text-indigo-700"
                 >
                   Ver en Cobranzas

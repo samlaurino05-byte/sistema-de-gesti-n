@@ -107,3 +107,19 @@ export async function getHourEntriesForClient(
 
   return rows.map(toHourEntryDTO);
 }
+
+// Sprint 8.6A: usado por src/lib/data/invoices.ts para resolver las horas
+// incluidas en una factura (vía InvoiceItem.hourEntryId). Vive acá, no en
+// invoices.ts, para no duplicar el mapeo de HourEntryStatus/Decimal — Horas
+// sigue siendo la única fuente de verdad de cómo se lee un HourEntry.
+export async function getHourEntriesByIds(organizationId: string, hourEntryIds: string[]): Promise<HourEntryDTO[]> {
+  if (hourEntryIds.length === 0) return [];
+
+  const rows = await prisma.hourEntry.findMany({
+    where: { organizationId, id: { in: hourEntryIds } },
+    select: HOUR_ENTRY_SELECT,
+    orderBy: { createdAt: "asc" },
+  });
+
+  return rows.map(toHourEntryDTO);
+}

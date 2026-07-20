@@ -364,6 +364,13 @@ model Invoice {
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
 
+  /// Identificador público usado en URLs (/invoices/[slug]), independiente
+  /// del `id` interno (cuid) y de `numero` (que tiene espacios/guiones y no
+  /// es apto para URL). Sprint 8.6A: se deriva mecánicamente de `numero`
+  /// (slugificado), no del id del mock ni de la organización — mismo
+  /// criterio de diseño que `Client.slug`/`Employee.slug`.
+  slug String
+
   // Numeración: ver InvoiceCounter. `numero` es el string formateado
   // (ej. "A 0003-00141"), fijado en el momento de emisión y nunca
   // recalculado — es un dato legal/contable inmutable, no derivado.
@@ -397,6 +404,7 @@ model Invoice {
   // módulo de Facturación a Prisma — no se resuelve en este schema.
 
   @@unique([organizationId, puntoVenta, numeroSecuencial])
+  @@unique([organizationId, slug])
   @@index([organizationId])
   @@index([organizationId, estado])
   @@index([clientId])

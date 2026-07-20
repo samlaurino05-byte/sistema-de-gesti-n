@@ -5,32 +5,34 @@ import { Banknote, Clock3, FileWarning, Search, Wallet } from "lucide-react";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { InvoiceRow } from "@/components/invoices/InvoiceRow";
 import { NewInvoiceButton } from "@/components/invoices/NewInvoiceButton";
-import { getClientById } from "@/lib/mock/clients";
-import { invoiceStatusLabels, summarizeInvoices, type Invoice, type InvoiceStatus } from "@/lib/mock/invoices";
+import type { InvoiceListItem, InvoicesSummary } from "@/lib/data/invoices";
+import { invoiceStatusLabels, type InvoiceStatus } from "@/lib/mock/invoices";
 import { cn, formatCurrency } from "@/lib/utils";
 
 type StatusFilter = "todas" | InvoiceStatus;
 
 const statusFilters: StatusFilter[] = ["todas", "borrador", "emitida", "pagada", "vencida", "anulada"];
 
-export function InvoicesView({ invoices }: { invoices: Invoice[] }) {
+type InvoicesViewProps = {
+  invoices: InvoiceListItem[];
+  summary: InvoicesSummary;
+};
+
+export function InvoicesView({ invoices, summary }: InvoicesViewProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todas");
-
-  const metrics = useMemo(() => summarizeInvoices(invoices), [invoices]);
 
   const filteredInvoices = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return invoices.filter((invoice) => {
-      const client = getClientById(invoice.clientId);
       const matchesStatus = statusFilter === "todas" || invoice.estado === statusFilter;
       const matchesQuery =
         query.length === 0 ||
         invoice.numero.toLowerCase().includes(query) ||
-        client?.nombreComercial.toLowerCase().includes(query) ||
-        client?.razonSocial.toLowerCase().includes(query) ||
-        client?.cuit.toLowerCase().includes(query);
+        invoice.cliente.nombreComercial.toLowerCase().includes(query) ||
+        invoice.cliente.razonSocial.toLowerCase().includes(query) ||
+        invoice.cliente.cuit.toLowerCase().includes(query);
 
       return matchesStatus && matchesQuery;
     });
@@ -47,15 +49,15 @@ export function InvoicesView({ invoices }: { invoices: Invoice[] }) {
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Total facturado" value={formatCurrency(metrics.totalFacturado)} icon={Banknote} tone="default" />
+        <MetricCard label="Total facturado" value={formatCurrency(summary.totalFacturado)} icon={Banknote} tone="default" />
         <MetricCard
           label="Pendiente de cobro"
-          value={formatCurrency(metrics.pendienteCobro)}
+          value={formatCurrency(summary.pendienteCobro)}
           icon={Clock3}
           tone="warning"
         />
-        <MetricCard label="Vencido" value={formatCurrency(metrics.vencido)} icon={FileWarning} tone="danger" />
-        <MetricCard label="Cobrado" value={formatCurrency(metrics.cobrado)} icon={Wallet} tone="success" />
+        <MetricCard label="Vencido" value={formatCurrency(summary.vencido)} icon={FileWarning} tone="danger" />
+        <MetricCard label="Cobrado" value={formatCurrency(summary.cobrado)} icon={Wallet} tone="success" />
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">

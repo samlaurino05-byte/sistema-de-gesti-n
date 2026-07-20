@@ -7,6 +7,7 @@ import {
   ClientStatus,
   EmployeeStatus,
   HourEntryStatus,
+  InvoiceStatus,
 } from "../src/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { hashPassword } from "../src/lib/auth/password";
@@ -21,19 +22,26 @@ import {
 import { clients as mockClients, type ClientStatus as MockClientStatus } from "../src/lib/mock/clients";
 import { employees as mockEmployees, type EmployeeStatus as MockEmployeeStatus } from "../src/lib/mock/employees";
 import { hourEntries as mockHourEntries, type HourEntryStatus as MockHourEntryStatus } from "../src/lib/mock/hours";
+import {
+  invoices as mockInvoices,
+  calculateInvoiceAmounts,
+  type InvoiceStatus as MockInvoiceStatus,
+} from "../src/lib/mock/invoices";
 
 // Seed idempotente de datos base (Sprint 8.2 autenticación, 8.3 Clientes,
-// 8.4 Empleados, 8.5A Horas). Se puede correr las veces que hagan falta:
-// todo usa upsert sobre las mismas claves únicas del schema, nunca crea
-// duplicados.
+// 8.4 Empleados, 8.5A Horas, 8.6A Facturación — solo lectura). Se puede
+// correr las veces que hagan falta: todo usa upsert sobre las mismas
+// claves únicas del schema, nunca crea duplicados.
 //
 // Crea: organización, roles, catálogo de permisos, matriz de
 // RolePermission, un usuario administrador con su Membership, los
 // Employee y Client de la cartera mock (con responsableInternoId
-// resuelto cuando corresponde), y las HourEntry del mock (con
+// resuelto cuando corresponde), las HourEntry del mock (con
 // employeeId/clientId resueltos a los Employee/Client reales recién
-// creados). NO crea Invoice ni ninguna relación con InvoiceItem — esos
-// siguen sin migrar (fuera de alcance de este sprint).
+// creados), y las Invoice del mock con sus InvoiceItem/Payment/
+// InvoiceCounter (ver comentario detallado más abajo). NO implementa
+// emisión real, numeración automática ni registro de pagos — eso es
+// Sprint 8.6B.
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -105,6 +113,34 @@ const HOUR_ENTRY_STATUS_BY_MOCK_KEY: Record<MockHourEntryStatus, HourEntryStatus
   rechazada: HourEntryStatus.RECHAZADA,
   facturada: HourEntryStatus.FACTURADA,
 };
+
+// Sprint 8.6A: mismo mapeo para el estado de Invoice.
+const INVOICE_STATUS_BY_MOCK_KEY: Record<MockInvoiceStatus, InvoiceStatus> = {
+  borrador: InvoiceStatus.BORRADOR,
+  emitida: InvoiceStatus.EMITIDA,
+  pagada: InvoiceStatus.PAGADA,
+  vencida: InvoiceStatus.VENCIDA,
+  anulada: InvoiceStatus.ANULADA,
+};
+
+// Descompone mecánicamente el `numero` ya fijado en el mock (ej.
+// "A 0003-00141") en las columnas que exige el schema (`puntoVenta`,
+// `numeroSecuencial`) y deriva `slug` (identificador público de la URL,
+// ver prisma/schema.prisma) — no inventa ningún valor, solo parsea el
+// string legal que la factura ya tiene.
+function parseInvoiceNumero(numero: string): { puntoVenta: string; numeroSecuencial: number; slug: string } {
+  const match = numero.match(/^[A-Z]\s+(\d+)-(\d+)$/);
+  if (!match) {
+    throw new Error(`No se pudo parsear el número de comprobante "${numero}"`);
+  }
+
+  const [, puntoVenta, secuencial] = match;
+  return {
+    puntoVenta,
+    numeroSecuencial: Number(secuencial),
+    slug: numero.toLowerCase().replace(/\s+/g, "-"),
+  };
+}
 
 const adapter = new PrismaNeon({ connectionString: DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -427,6 +463,195 @@ async function main() {
   if (hourEntriesSinVincular.length > 0) {
     console.log(`Horas sin vincular (empleado o cliente no encontrado): ${hourEntriesSinVincular.join(", ")}`);
   }
+
+  // Sprint 8.6A: alta de las facturas mock en la Organization de
+  // demostración, en modo solo lectura. `numero` es el string legal ya
+  // fijado en el mock; acá solo se descompone mecánicamente en
+  // puntoVenta/numeroSecuencial (columnas que exige el schema) y se deriva
+  // `slug` (ver parseInvoiceNumero) — no se inventa ningún valor de
+  // negocio nuevo, todo sale de invoices.ts del mock.
+  //
+  // InvoiceItem: el mock no modela ítems de factura, solo `hourEntryIds`.
+  // Se reconstruye un ítem por factura:
+  // - Con hora vinculada: el ítem se deriva de esa HourEntry
+  //   (cantidad = horas, precioUnitario = valorHoraCliente,
+  //   iva/total vía calculateInvoiceAmounts, la misma función que ya usa
+  //   el mock) — reconcilia exactamente con subtotal/iva/total ya
+  //   hardcodeados en cada factura mock (verificado a mano contra las 12
+  //   facturas antes de escribir este código).
+  // - Sin hora vinculada (honorario fijo / gasto reintegrable en el mock,
+  //   `hourEntryIds` vacío): se crea un único ítem manual que reproduce el
+  //   subtotal/iva/total de la factura tal cual — el schema contempla
+  //   explícitamente ítems manuales (InvoiceItem.hourEntryId opcional).
+  //
+  // Payment: el mock no tiene pagos separados, solo `saldoPendiente` ya
+  // calculado. Únicamente las facturas PAGADA tienen saldoPendiente = 0
+  // con total > 0 en el mock — para esas se crea un único Payment por el
+  // total (la única cifra que reproduce ese saldoPendiente sin inventar un
+  // monto parcial, que no existe en ningún caso del mock actual). Las
+  // EMITIDA/VENCIDA no tienen pagos (saldoPendiente = total en el mock), y
+  // BORRADOR/ANULADA tienen saldoPendiente = 0 por definición de estado,
+  // no por pagos (ver computeSaldoPendiente en src/lib/data/invoices.ts) —
+  // en ningún caso hace falta ni se crea un Payment parcial inventado.
+  let invoiceCount = 0;
+  let invoiceItemCount = 0;
+  let paymentCount = 0;
+  const invoicesSinVincular: string[] = [];
+  const lastNumberByPuntoVenta = new Map<string, number>();
+
+  for (const mockInvoice of mockInvoices) {
+    const client = await prisma.client.findUnique({
+      where: { organizationId_slug: { organizationId: organization.id, slug: mockInvoice.clientId } },
+    });
+
+    if (!client) {
+      invoicesSinVincular.push(`${mockInvoice.id} (cliente="${mockInvoice.clientId}")`);
+      continue;
+    }
+
+    const { puntoVenta, numeroSecuencial, slug } = parseInvoiceNumero(mockInvoice.numero);
+    lastNumberByPuntoVenta.set(puntoVenta, Math.max(lastNumberByPuntoVenta.get(puntoVenta) ?? 0, numeroSecuencial));
+
+    const invoiceFields = {
+      organizationId: organization.id,
+      clientId: client.id,
+      puntoVenta,
+      numeroSecuencial,
+      numero: mockInvoice.numero,
+      concepto: mockInvoice.concepto,
+      fechaEmision: mockInvoice.fechaEmision ? new Date(mockInvoice.fechaEmision) : null,
+      fechaVencimiento: mockInvoice.fechaVencimiento ? new Date(mockInvoice.fechaVencimiento) : null,
+      subtotal: mockInvoice.subtotal,
+      iva: mockInvoice.iva,
+      total: mockInvoice.total,
+      estado: INVOICE_STATUS_BY_MOCK_KEY[mockInvoice.estado],
+    };
+
+    const invoice = await prisma.invoice.upsert({
+      where: { organizationId_slug: { organizationId: organization.id, slug } },
+      update: invoiceFields,
+      create: { ...invoiceFields, slug },
+    });
+    invoiceCount += 1;
+
+    if (mockInvoice.hourEntryIds.length > 0) {
+      for (const [index, mockHourId] of mockInvoice.hourEntryIds.entries()) {
+        const hourEntryId = `${organization.slug}-${mockHourId}`;
+        const hourEntry = await prisma.hourEntry.findUnique({ where: { id: hourEntryId } });
+
+        if (!hourEntry) {
+          invoicesSinVincular.push(`${mockInvoice.id} (hora="${mockHourId}" no encontrada)`);
+          continue;
+        }
+
+        const cantidad = hourEntry.horas.toNumber();
+        const precioUnitario = hourEntry.valorHoraCliente.toNumber();
+        const itemSubtotal = cantidad * precioUnitario;
+        const { iva: itemIva, total: itemTotal } = calculateInvoiceAmounts(itemSubtotal);
+
+        await prisma.invoiceItem.upsert({
+          where: { hourEntryId },
+          update: {
+            organizationId: organization.id,
+            invoiceId: invoice.id,
+            orden: index + 1,
+            descripcion: hourEntry.proyecto,
+            cantidad,
+            precioUnitario,
+            alicuotaIva: 21,
+            subtotal: itemSubtotal,
+            montoIva: itemIva,
+            total: itemTotal,
+          },
+          create: {
+            organizationId: organization.id,
+            invoiceId: invoice.id,
+            orden: index + 1,
+            descripcion: hourEntry.proyecto,
+            cantidad,
+            precioUnitario,
+            alicuotaIva: 21,
+            subtotal: itemSubtotal,
+            montoIva: itemIva,
+            total: itemTotal,
+            hourEntryId,
+          },
+        });
+        invoiceItemCount += 1;
+      }
+    } else {
+      const manualItemId = `${invoice.id}-item-manual`;
+      await prisma.invoiceItem.upsert({
+        where: { id: manualItemId },
+        update: {
+          organizationId: organization.id,
+          invoiceId: invoice.id,
+          orden: 1,
+          descripcion: mockInvoice.concepto,
+          cantidad: 1,
+          precioUnitario: mockInvoice.subtotal,
+          alicuotaIva: 21,
+          subtotal: mockInvoice.subtotal,
+          montoIva: mockInvoice.iva,
+          total: mockInvoice.total,
+        },
+        create: {
+          id: manualItemId,
+          organizationId: organization.id,
+          invoiceId: invoice.id,
+          orden: 1,
+          descripcion: mockInvoice.concepto,
+          cantidad: 1,
+          precioUnitario: mockInvoice.subtotal,
+          alicuotaIva: 21,
+          subtotal: mockInvoice.subtotal,
+          montoIva: mockInvoice.iva,
+          total: mockInvoice.total,
+        },
+      });
+      invoiceItemCount += 1;
+    }
+
+    if (mockInvoice.estado === "pagada") {
+      const paymentId = `${invoice.id}-payment-1`;
+      const paymentFields = {
+        organizationId: organization.id,
+        invoiceId: invoice.id,
+        monto: mockInvoice.total,
+        fecha: new Date(mockInvoice.fechaVencimiento),
+        medioPago: "TRANSFERENCIA" as const,
+      };
+
+      await prisma.payment.upsert({
+        where: { id: paymentId },
+        update: paymentFields,
+        create: { id: paymentId, ...paymentFields },
+      });
+      paymentCount += 1;
+    }
+  }
+
+  console.log(`Facturas: ${invoiceCount}`);
+  console.log(`Ítems de factura: ${invoiceItemCount}`);
+  console.log(`Pagos: ${paymentCount}`);
+  if (invoicesSinVincular.length > 0) {
+    console.log(`Facturas con datos sin vincular: ${invoicesSinVincular.join(", ")}`);
+  }
+
+  // InvoiceCounter: uno por punto de venta, con lastNumber = máximo
+  // numeroSecuencial ya emitido (calculado arriba a partir del propio
+  // mock, no inventado) — deja la numeración lista para cuando Sprint
+  // 8.6B implemente la emisión real con incremento atómico.
+  let invoiceCounterCount = 0;
+  for (const [puntoVenta, lastNumber] of lastNumberByPuntoVenta) {
+    await prisma.invoiceCounter.upsert({
+      where: { organizationId_puntoVenta: { organizationId: organization.id, puntoVenta } },
+      update: { lastNumber },
+      create: { organizationId: organization.id, puntoVenta, lastNumber },
+    });
+    invoiceCounterCount += 1;
+  }
+  console.log(`InvoiceCounter: ${invoiceCounterCount}`);
 
   console.log("\nSeed completado.");
 }

@@ -1,11 +1,19 @@
 import Link from "next/link";
 import { Building2, Calendar } from "lucide-react";
 import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
-import type { Client } from "@/lib/mock/clients";
 import type { Invoice } from "@/lib/mock/invoices";
 import { formatDate, getInitials } from "@/lib/utils";
 
-export function InvoiceWorkspaceHeader({ invoice, client }: { invoice: Invoice; client: Client }) {
+// Sprint 8.6A: `client` se relaja a los dos campos que este componente
+// realmente usa (en vez del `Client` completo del mock) — quien lo llama
+// ya no tiene que ser el mock de Clientes, alcanza con lo que
+// src/lib/data/invoices.ts resuelve.
+type InvoiceWorkspaceHeaderProps = {
+  invoice: Pick<Invoice, "numero" | "estado" | "fechaVencimiento">;
+  client: { id: string; nombreComercial: string };
+};
+
+export function InvoiceWorkspaceHeader({ invoice, client }: InvoiceWorkspaceHeaderProps) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
