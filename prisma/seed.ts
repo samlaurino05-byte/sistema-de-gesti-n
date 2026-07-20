@@ -6,6 +6,7 @@ import {
   PermissionAction,
   ClientStatus,
   EmployeeStatus,
+  HourEntryStatus,
 } from "../src/generated/prisma/client";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { hashPassword } from "../src/lib/auth/password";
@@ -19,17 +20,20 @@ import {
 } from "../src/lib/mock/settings";
 import { clients as mockClients, type ClientStatus as MockClientStatus } from "../src/lib/mock/clients";
 import { employees as mockEmployees, type EmployeeStatus as MockEmployeeStatus } from "../src/lib/mock/employees";
+import { hourEntries as mockHourEntries, type HourEntryStatus as MockHourEntryStatus } from "../src/lib/mock/hours";
 
 // Seed idempotente de datos base (Sprint 8.2 autenticación, 8.3 Clientes,
-// 8.4 Empleados). Se puede correr las veces que hagan falta: todo usa
-// upsert sobre las mismas claves únicas del schema, nunca crea duplicados.
+// 8.4 Empleados, 8.5A Horas). Se puede correr las veces que hagan falta:
+// todo usa upsert sobre las mismas claves únicas del schema, nunca crea
+// duplicados.
 //
 // Crea: organización, roles, catálogo de permisos, matriz de
 // RolePermission, un usuario administrador con su Membership, los
 // Employee y Client de la cartera mock (con responsableInternoId
-// resuelto cuando corresponde). NO crea Invoice/HourEntry ni ningún otro
-// dato de negocio — esos módulos siguen sin migrar (fuera de alcance de
-// este sprint).
+// resuelto cuando corresponde), y las HourEntry del mock (con
+// employeeId/clientId resueltos a los Employee/Client reales recién
+// creados). NO crea Invoice ni ninguna relación con InvoiceItem — esos
+// siguen sin migrar (fuera de alcance de este sprint).
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -92,6 +96,14 @@ const EMPLOYEE_STATUS_BY_MOCK_KEY: Record<MockEmployeeStatus, EmployeeStatus> = 
   vacaciones: EmployeeStatus.VACACIONES,
   licencia: EmployeeStatus.LICENCIA,
   inactivo: EmployeeStatus.INACTIVO,
+};
+
+// Sprint 8.5A: mismo mapeo para el estado de HourEntry.
+const HOUR_ENTRY_STATUS_BY_MOCK_KEY: Record<MockHourEntryStatus, HourEntryStatus> = {
+  pendiente: HourEntryStatus.PENDIENTE,
+  aprobada: HourEntryStatus.APROBADA,
+  rechazada: HourEntryStatus.RECHAZADA,
+  facturada: HourEntryStatus.FACTURADA,
 };
 
 const adapter = new PrismaNeon({ connectionString: DATABASE_URL });
@@ -323,6 +335,97 @@ async function main() {
   console.log(`Clientes vinculados a Employee real: ${clientesVinculados}`);
   if (clientesSinVincular.length > 0) {
     console.log(`Clientes sin vincular: ${clientesSinVincular.join(", ")}`);
+  }
+
+  // Sprint 8.5A: alta de las cargas de horas mock en la Organization de
+  // demostración. `mockEntry.employeeId`/`mockEntry.clientId` son el `id`
+  // del mock de Empleados/Clientes, que arriba se preservó como `slug` —
+  // se resuelven acá contra los Employee/Client reales recién creados.
+  //
+  // No hay una clave de negocio única declarada para HourEntry en el
+  // schema (a diferencia de Employee/Client, que tienen
+  // `@@unique([organizationId, slug])`). Para que el seed sea idempotente
+  // sin tocar el schema, se compone un id determinístico por organización
+  // (`${organization.slug}-${mockEntry.id}`, ej. "estudio-mendez-h1") y se
+  // upsertea por ese id.
+  //
+  // Corrección post Sprint 8.5A: la primera versión reusaba el `id` crudo
+  // del mock ("h1".."h26") como id global de HourEntry. Al no llevar el
+  // slug de la organización, un id así puede colisionar entre distintas
+  // organizaciones (dos tenants podrían tener ambos una hora "h1"), y el
+  // upsert de una organización terminaría pisando la fila de otra. Namespacear
+  // el id por organización lo vuelve único de verdad sin tocar el schema.
+  //
+  // `invoiceId` del mock se ignora a propósito: la relación con
+  // Facturación se resuelve vía InvoiceItem.hourEntryId (ver
+  // docs/architecture.md), y Facturación sigue sin migrar.
+
+  // Limpieza única de las filas creadas con el esquema de id anterior
+  // (id = "h1".."h26" sin namespacing). Si no existen (seed nunca corrido
+  // con la versión vieja, o ya limpiado en una corrida anterior), el
+  // deleteMany no borra nada — es un no-op idempotente.
+  const legacyHourEntryIds = mockHourEntries.map((entry) => entry.id);
+  const { count: legacyHourEntriesDeleted } = await prisma.hourEntry.deleteMany({
+    where: { organizationId: organization.id, id: { in: legacyHourEntryIds } },
+  });
+  if (legacyHourEntriesDeleted > 0) {
+    console.log(
+      `Horas con id legacy (sin namespacing por organización) eliminadas: ${legacyHourEntriesDeleted}`
+    );
+  }
+
+  let hourEntryCount = 0;
+  const hourEntriesSinVincular: string[] = [];
+  for (const mockEntry of mockHourEntries) {
+    const employee = await prisma.employee.findUnique({
+      where: { organizationId_slug: { organizationId: organization.id, slug: mockEntry.employeeId } },
+    });
+    const client = await prisma.client.findUnique({
+      where: { organizationId_slug: { organizationId: organization.id, slug: mockEntry.clientId } },
+    });
+
+    if (!employee || !client) {
+      hourEntriesSinVincular.push(
+        `${mockEntry.id} (employee="${mockEntry.employeeId}", client="${mockEntry.clientId}")`
+      );
+      continue;
+    }
+
+    const hourEntryId = `${organization.slug}-${mockEntry.id}`;
+
+    await prisma.hourEntry.upsert({
+      where: { id: hourEntryId },
+      update: {
+        organizationId: organization.id,
+        employeeId: employee.id,
+        clientId: client.id,
+        fecha: new Date(mockEntry.fecha),
+        proyecto: mockEntry.proyecto,
+        horas: mockEntry.horas,
+        descripcion: mockEntry.descripcion,
+        estado: HOUR_ENTRY_STATUS_BY_MOCK_KEY[mockEntry.estado],
+        valorHoraInterno: mockEntry.valorHoraInterno,
+        valorHoraCliente: mockEntry.valorHoraCliente,
+      },
+      create: {
+        id: hourEntryId,
+        organizationId: organization.id,
+        employeeId: employee.id,
+        clientId: client.id,
+        fecha: new Date(mockEntry.fecha),
+        proyecto: mockEntry.proyecto,
+        horas: mockEntry.horas,
+        descripcion: mockEntry.descripcion,
+        estado: HOUR_ENTRY_STATUS_BY_MOCK_KEY[mockEntry.estado],
+        valorHoraInterno: mockEntry.valorHoraInterno,
+        valorHoraCliente: mockEntry.valorHoraCliente,
+      },
+    });
+    hourEntryCount += 1;
+  }
+  console.log(`Horas: ${hourEntryCount}`);
+  if (hourEntriesSinVincular.length > 0) {
+    console.log(`Horas sin vincular (empleado o cliente no encontrado): ${hourEntriesSinVincular.join(", ")}`);
   }
 
   console.log("\nSeed completado.");

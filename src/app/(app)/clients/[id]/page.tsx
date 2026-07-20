@@ -30,9 +30,10 @@ import {
   quickActions,
 } from "@/lib/mock/clients";
 import { getCollectionSummaryForClient } from "@/lib/mock/collections";
-import { getHoursForClient, summarizeHours } from "@/lib/mock/hours";
+import { summarizeHours, type HourEntry } from "@/lib/mock/hours";
 import { getInvoicesForClient, invoices, summarizeInvoices } from "@/lib/mock/invoices";
 import { getClientBySlugForOrganization } from "@/lib/data/clients";
+import { getHourEntriesForClient } from "@/lib/data/hours";
 import { requireActiveSession } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -49,8 +50,17 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const session = await requireActiveSession();
 
   let client;
+  let hourEntries: HourEntry[];
   try {
-    client = await getClientBySlugForOrganization(id, session.organizationId);
+    // Ambas consultas filtran por el mismo slug (`id`, el segmento de la
+    // URL) y son independientes entre sí: `hourEntries` no necesita esperar
+    // a que `client` resuelva. Antes se encadenaban en 2 round-trips
+    // secuenciales a la base; Promise.all las dispara en paralelo (ver
+    // revisión de rendimiento post Sprint 8.5A).
+    [client, hourEntries] = await Promise.all([
+      getClientBySlugForOrganization(id, session.organizationId),
+      getHourEntriesForClient(session.organizationId, id),
+    ]);
   } catch (error) {
     console.error(`No se pudo cargar el cliente "${id}":`, error);
     return (
@@ -81,7 +91,6 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const documents = getClientDocuments(client);
   const communications = getClientCommunications(client);
   const aiSuggestions = getClientAiInsights(client).map((text) => ({ text }));
-  const hourEntries = getHoursForClient(client.id);
   const hoursSummary = summarizeHours(hourEntries);
   const clientInvoices = getInvoicesForClient(client.id);
   const invoicesSummary = summarizeInvoices(clientInvoices);

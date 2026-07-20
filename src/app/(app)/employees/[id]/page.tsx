@@ -27,9 +27,11 @@ import {
   getEmployeeObservations,
   getEmployeeTimeline,
 } from "@/lib/mock/employees";
-import { getHoursForEmployee, summarizeHours } from "@/lib/mock/hours";
+import { summarizeHours, type HourEntry } from "@/lib/mock/hours";
+import type { Client } from "@/lib/mock/clients";
 import { getEmployeeBySlugForOrganization } from "@/lib/data/employees";
 import { getClientsAssignedToEmployee } from "@/lib/data/clients";
+import { getHourEntriesForEmployee } from "@/lib/data/hours";
 import { requireActiveSession } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -44,10 +46,20 @@ export default async function EmployeeWorkspacePage({ params }: { params: Promis
   const session = await requireActiveSession();
 
   let employee;
-  let assignedClients;
+  let assignedClients: Client[];
+  let hourEntries: HourEntry[];
   try {
-    employee = await getEmployeeBySlugForOrganization(id, session.organizationId);
-    assignedClients = employee ? await getClientsAssignedToEmployee(employee.id, session.organizationId) : [];
+    // Las tres consultas filtran por el mismo slug (`id`, el segmento de la
+    // URL) y son independientes entre sí: `assignedClients`/`hourEntries`
+    // no necesitan esperar a que `employee` resuelva para saber qué slug
+    // usar. Antes se encadenaban en 3 round-trips secuenciales a la base;
+    // Promise.all las dispara en paralelo (ver revisión de rendimiento
+    // post Sprint 8.5A).
+    [employee, assignedClients, hourEntries] = await Promise.all([
+      getEmployeeBySlugForOrganization(id, session.organizationId),
+      getClientsAssignedToEmployee(id, session.organizationId),
+      getHourEntriesForEmployee(session.organizationId, id),
+    ]);
   } catch (error) {
     console.error(`No se pudo cargar el empleado "${id}":`, error);
     return (
@@ -74,7 +86,6 @@ export default async function EmployeeWorkspacePage({ params }: { params: Promis
     notFound();
   }
 
-  const hourEntries = getHoursForEmployee(employee.id);
   const hoursSummary = summarizeHours(hourEntries);
   const timeline = getEmployeeTimeline(employee);
   const documents = getEmployeeDocuments(employee);
