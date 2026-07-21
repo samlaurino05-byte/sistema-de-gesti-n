@@ -1,25 +1,30 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { InvoiceStatus as PrismaInvoiceStatus } from "@/generated/prisma/client";
-import type { InvoiceStatus } from "@/lib/mock/invoices";
+import {
+  ClientStatus as PrismaClientStatus,
+  HourEntryStatus as PrismaHourEntryStatus,
+  InvoiceStatus as PrismaInvoiceStatus,
+} from "@/generated/prisma/client";
+import { calculateInvoiceAmounts, type InvoiceStatus } from "@/lib/mock/invoices";
 import { getHourEntriesByIds } from "@/lib/data/hours";
 import type { HourEntry } from "@/lib/mock/hours";
 
-// Capa central de acceso a datos del módulo Facturación (Sprint 8.6A). Mismo
-// patrón que src/lib/data/clients.ts, employees.ts y hours.ts: los
-// componentes visuales consumen facturas exclusivamente a través de estas
-// funciones, nunca importan Prisma directamente, y toda query filtra
-// explícitamente por organizationId (que debe salir de la sesión activa,
-// ver src/lib/auth/session.ts).
+// Capa central de acceso a datos del módulo Facturación (Sprint 8.6A lectura,
+// 8.6B emisión). Mismo patrón que src/lib/data/clients.ts, employees.ts y
+// hours.ts: los componentes visuales consumen facturas exclusivamente a
+// través de estas funciones, nunca importan Prisma directamente, y toda
+// query filtra explícitamente por organizationId (que debe salir de la
+// sesión activa, ver src/lib/auth/session.ts).
 //
 // Regla de arquitectura (Sprint 8.6A): toda la lógica de negocio de
 // Facturación — resolución de cliente, cálculo de saldo pendiente, mapeo de
 // estado — vive acá, no en páginas ni componentes. Los DTOs que exponen
 // estas funciones ya traen resuelto todo lo que la UI necesita; ningún
 // componente debería volver a calcular saldo/estado/cliente/pagos/totales.
-//
-// Alcance de este sprint: solo lectura. Emisión real, numeración automática
-// y registro de pagos quedan para Sprint 8.6B.
+// Sprint 8.6B extiende esta misma regla a la emisión: la transacción
+// completa (validación, numeración, cálculo de montos) vive acá, no en la
+// Server Action ni en el componente que la invoque (8.6B.2, todavía no
+// implementado).
 
 const STATUS_TO_DTO: Record<PrismaInvoiceStatus, InvoiceStatus> = {
   [PrismaInvoiceStatus.BORRADOR]: "borrador",
@@ -227,4 +232,213 @@ export async function getInvoiceBySlugForOrganization(
     cliente: { id: row.client.slug, nombreComercial: row.client.nombreComercial },
     hourEntries,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Emisión real de facturas (Sprint 8.6B.1)
+// ---------------------------------------------------------------------------
+//
+// Decisiones de negocio confirmadas para este sprint (no son valores
+// arbitrarios — quedan documentadas acá porque dependen de módulos que
+// todavía no migraron):
+// - Punto de venta y días de vencimiento: constantes, hasta que
+//   BillingSettings (Configuración → Facturación) se migre a Prisma.
+// - Concepto: fijo ("Honorarios profesionales"), sin generación automática
+//   de nombres de proyecto ni período en este sprint.
+// - Letra del comprobante: derivada de Client.condicionFiscal. Si el valor
+//   no matchea ninguna condición conocida, se rechaza la emisión en vez de
+//   asumir una letra por defecto.
+// - Clientes facturables: solo ACTIVO y MORA. PAUSADO e INACTIVO bloquean
+//   la emisión.
+// - Estado inicial de la factura: EMITIDA (no BORRADOR).
+const PUNTO_VENTA = "0003";
+const DIAS_VENCIMIENTO = 30;
+const CONCEPTO_POR_DEFECTO = "Honorarios profesionales";
+const ALICUOTA_IVA = 21;
+
+const CLIENT_ESTADOS_FACTURABLES: PrismaClientStatus[] = [PrismaClientStatus.ACTIVO, PrismaClientStatus.MORA];
+
+const LETRA_COMPROBANTE_POR_CONDICION_FISCAL: Record<string, string> = {
+  "Responsable Inscripto": "A",
+  Monotributo: "B",
+};
+
+// Todos los errores de negocio de la emisión (a diferencia de errores de
+// infraestructura: caída de conexión, etc.) se tipan con esta clase, para
+// que la Server Action de 8.6B.2 pueda distinguir "mostrale este mensaje al
+// usuario" de "esto es un error inesperado, logueá y mostrá un genérico".
+export class EmitInvoiceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmitInvoiceError";
+  }
+}
+
+export type EmitInvoiceResult = {
+  slug: string;
+  numero: string;
+};
+
+function buildInvoiceNumero(letra: string, numeroSecuencial: number): string {
+  return `${letra} ${PUNTO_VENTA}-${String(numeroSecuencial).padStart(5, "0")}`;
+}
+
+function slugifyNumero(numero: string): string {
+  return numero.toLowerCase().replace(/\s+/g, "-");
+}
+
+// Emite una factura real a partir de horas ya aprobadas. Toda la
+// validación, el cálculo de montos y la numeración ocurren dentro de una
+// única transacción interactiva — ver docs/architecture.md y el diseño de
+// Sprint 8.6B para el detalle de por qué cada paso está en este orden.
+//
+// `clientSlug`/`hourEntryIds` son los únicos datos que deberían venir del
+// llamador: ningún monto (subtotal/iva/total) se acepta como input — se
+// recalculan acá desde las HourEntry ya validadas, para que no exista
+// ninguna vía de mandar un total manipulado desde afuera.
+export async function emitInvoiceFromApprovedHours(
+  organizationId: string,
+  clientSlug: string,
+  hourEntryIds: string[]
+): Promise<EmitInvoiceResult> {
+  if (hourEntryIds.length === 0) {
+    throw new EmitInvoiceError("Seleccioná al menos una hora para facturar.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const client = await tx.client.findUnique({
+      where: { organizationId_slug: { organizationId, slug: clientSlug } },
+      select: { id: true, condicionFiscal: true, estado: true },
+    });
+
+    if (!client) {
+      throw new EmitInvoiceError("El cliente no existe en esta organización.");
+    }
+
+    if (!CLIENT_ESTADOS_FACTURABLES.includes(client.estado)) {
+      throw new EmitInvoiceError("No se puede facturar a un cliente pausado o inactivo.");
+    }
+
+    const letra = LETRA_COMPROBANTE_POR_CONDICION_FISCAL[client.condicionFiscal];
+    if (!letra) {
+      throw new EmitInvoiceError(
+        `No se pudo determinar el tipo de comprobante para la condición fiscal "${client.condicionFiscal}".`
+      );
+    }
+
+    // Primera verificación: trae las horas con sus valores snapshot para
+    // calcular los montos. El propio filtro `estado: APROBADA` ya excluye
+    // horas ya facturadas por otra transacción — si `hourEntries.length` no
+    // coincide con lo pedido, algo cambió desde que el usuario armó la
+    // selección (no pertenece al cliente, ya no está aprobada, no existe).
+    const hourEntries = await tx.hourEntry.findMany({
+      where: {
+        id: { in: hourEntryIds },
+        organizationId,
+        clientId: client.id,
+        estado: PrismaHourEntryStatus.APROBADA,
+      },
+      select: { id: true, proyecto: true, horas: true, valorHoraCliente: true },
+    });
+
+    if (hourEntries.length !== hourEntryIds.length) {
+      throw new EmitInvoiceError(
+        "Alguna de las horas seleccionadas ya no está disponible (fue facturada, rechazada, o no pertenece a este cliente). Volvé a revisar la selección."
+      );
+    }
+
+    const items = hourEntries.map((entry) => {
+      const cantidad = entry.horas.toNumber();
+      const precioUnitario = entry.valorHoraCliente.toNumber();
+      const subtotalItem = cantidad * precioUnitario;
+      const { iva: montoIva, total: totalItem } = calculateInvoiceAmounts(subtotalItem);
+
+      return {
+        hourEntryId: entry.id,
+        descripcion: entry.proyecto,
+        cantidad,
+        precioUnitario,
+        subtotal: subtotalItem,
+        montoIva,
+        total: totalItem,
+      };
+    });
+
+    const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const { iva, total } = calculateInvoiceAmounts(subtotal);
+
+    // Segunda verificación — la que realmente protege contra concurrencia:
+    // un UPDATE condicionado por `estado: APROBADA` solo afecta las filas
+    // que siguen aprobadas en este instante. Si otra transacción ya las
+    // facturó entre el SELECT de arriba y este UPDATE, `count` viene menor
+    // y se aborta sin haber tocado el contador ni creado nada.
+    const { count: horasFacturadasCount } = await tx.hourEntry.updateMany({
+      where: {
+        id: { in: hourEntryIds },
+        organizationId,
+        clientId: client.id,
+        estado: PrismaHourEntryStatus.APROBADA,
+      },
+      data: { estado: PrismaHourEntryStatus.FACTURADA },
+    });
+
+    if (horasFacturadasCount !== hourEntryIds.length) {
+      throw new EmitInvoiceError(
+        "Alguna de las horas seleccionadas fue facturada por otra persona en este momento. Volvé a intentarlo."
+      );
+    }
+
+    // Incremento atómico del contador (ver docs/architecture.md e
+    // InvoiceCounter en prisma/schema.prisma): `upsert` para autocrear el
+    // contador si es la primera factura de este punto de venta.
+    const counter = await tx.invoiceCounter.upsert({
+      where: { organizationId_puntoVenta: { organizationId, puntoVenta: PUNTO_VENTA } },
+      update: { lastNumber: { increment: 1 } },
+      create: { organizationId, puntoVenta: PUNTO_VENTA, lastNumber: 1 },
+    });
+
+    const numeroSecuencial = counter.lastNumber;
+    const numero = buildInvoiceNumero(letra, numeroSecuencial);
+    const slug = slugifyNumero(numero);
+
+    const fechaEmision = new Date();
+    const fechaVencimiento = new Date(fechaEmision);
+    fechaVencimiento.setDate(fechaVencimiento.getDate() + DIAS_VENCIMIENTO);
+
+    const invoice = await tx.invoice.create({
+      data: {
+        organizationId,
+        clientId: client.id,
+        slug,
+        puntoVenta: PUNTO_VENTA,
+        numeroSecuencial,
+        numero,
+        concepto: CONCEPTO_POR_DEFECTO,
+        fechaEmision,
+        fechaVencimiento,
+        subtotal,
+        iva,
+        total,
+        estado: PrismaInvoiceStatus.EMITIDA,
+      },
+    });
+
+    await tx.invoiceItem.createMany({
+      data: items.map((item, index) => ({
+        organizationId,
+        invoiceId: invoice.id,
+        orden: index + 1,
+        descripcion: item.descripcion,
+        cantidad: item.cantidad,
+        precioUnitario: item.precioUnitario,
+        alicuotaIva: ALICUOTA_IVA,
+        subtotal: item.subtotal,
+        montoIva: item.montoIva,
+        total: item.total,
+        hourEntryId: item.hourEntryId,
+      })),
+    });
+
+    return { slug, numero };
+  });
 }
