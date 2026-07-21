@@ -2,11 +2,15 @@ import { Header } from "@/components/layout/Header";
 import { InvoicesView } from "@/app/(app)/invoices/InvoicesView";
 import {
   getInvoicesForOrganization,
+  getBillableHourEntriesForOrganization,
   summarizeInvoiceList,
   type InvoiceListItem,
   type InvoicesSummary,
 } from "@/lib/data/invoices";
+import { getClientsForOrganization } from "@/lib/data/clients";
 import { requireActiveSession } from "@/lib/auth/session";
+import type { Client } from "@/lib/mock/clients";
+import type { HourEntry } from "@/lib/mock/hours";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +21,16 @@ export default async function InvoicesPage() {
 
   let invoices: InvoiceListItem[] = [];
   let summary: InvoicesSummary = EMPTY_SUMMARY;
+  let clients: Client[] = [];
+  let billableHourEntries: HourEntry[] = [];
   let loadError = false;
 
   try {
-    invoices = await getInvoicesForOrganization(session.organizationId);
+    [invoices, clients, billableHourEntries] = await Promise.all([
+      getInvoicesForOrganization(session.organizationId),
+      getClientsForOrganization(session.organizationId),
+      getBillableHourEntriesForOrganization(session.organizationId),
+    ]);
     summary = summarizeInvoiceList(invoices);
   } catch (error) {
     console.error("No se pudo cargar la facturación:", error);
@@ -37,7 +47,12 @@ export default async function InvoicesPage() {
             <p className="mt-1 text-xs text-slate-400">Probá recargar la página en unos segundos.</p>
           </div>
         ) : (
-          <InvoicesView invoices={invoices} summary={summary} />
+          <InvoicesView
+            invoices={invoices}
+            summary={summary}
+            clients={clients}
+            billableHourEntries={billableHourEntries}
+          />
         )}
       </main>
     </>

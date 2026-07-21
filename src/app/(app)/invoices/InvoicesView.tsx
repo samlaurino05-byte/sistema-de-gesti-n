@@ -7,6 +7,8 @@ import { InvoiceRow } from "@/components/invoices/InvoiceRow";
 import { NewInvoiceButton } from "@/components/invoices/NewInvoiceButton";
 import type { InvoiceListItem, InvoicesSummary } from "@/lib/data/invoices";
 import { invoiceStatusLabels, type InvoiceStatus } from "@/lib/mock/invoices";
+import type { Client } from "@/lib/mock/clients";
+import type { HourEntry } from "@/lib/mock/hours";
 import { cn, formatCurrency } from "@/lib/utils";
 
 type StatusFilter = "todas" | InvoiceStatus;
@@ -16,9 +18,11 @@ const statusFilters: StatusFilter[] = ["todas", "borrador", "emitida", "pagada",
 type InvoicesViewProps = {
   invoices: InvoiceListItem[];
   summary: InvoicesSummary;
+  clients: Client[];
+  billableHourEntries: HourEntry[];
 };
 
-export function InvoicesView({ invoices, summary }: InvoicesViewProps) {
+export function InvoicesView({ invoices, summary, clients, billableHourEntries }: InvoicesViewProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todas");
 
@@ -45,7 +49,7 @@ export function InvoicesView({ invoices, summary }: InvoicesViewProps) {
           <h2 className="text-xl font-semibold tracking-tight text-slate-900">Facturación</h2>
           <p className="mt-1 text-sm text-slate-500">{invoices.length} comprobantes registrados</p>
         </div>
-        <NewInvoiceButton />
+        <NewInvoiceButton clients={clients} hourEntries={billableHourEntries} />
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

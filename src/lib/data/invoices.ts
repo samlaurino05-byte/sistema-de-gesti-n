@@ -6,7 +6,7 @@ import {
   InvoiceStatus as PrismaInvoiceStatus,
 } from "@/generated/prisma/client";
 import { calculateInvoiceAmounts, type InvoiceStatus } from "@/lib/mock/invoices";
-import { getHourEntriesByIds } from "@/lib/data/hours";
+import { getHourEntriesByIds, getHourEntriesForOrganization } from "@/lib/data/hours";
 import type { HourEntry } from "@/lib/mock/hours";
 
 // Capa central de acceso a datos del módulo Facturación (Sprint 8.6A lectura,
@@ -232,6 +232,17 @@ export async function getInvoiceBySlugForOrganization(
     cliente: { id: row.client.slug, nombreComercial: row.client.nombreComercial },
     hourEntries,
   };
+}
+
+// Horas elegibles para incluir en una factura nueva (Sprint 8.6B.2): mismo
+// criterio que exige emitInvoiceFromApprovedHours (estado APROBADA). Se
+// centraliza acá — no en la Server Action ni en el componente — para que
+// "qué horas se pueden facturar" tenga una única definición en todo el
+// módulo. La UI filtra el resultado por cliente seleccionado (una elección
+// de presentación, no una regla de negocio nueva).
+export async function getBillableHourEntriesForOrganization(organizationId: string): Promise<HourEntry[]> {
+  const hourEntries = await getHourEntriesForOrganization(organizationId);
+  return hourEntries.filter((entry) => entry.estado === "aprobada");
 }
 
 // ---------------------------------------------------------------------------
