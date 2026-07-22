@@ -115,9 +115,17 @@ const HOUR_ENTRY_STATUS_BY_MOCK_KEY: Record<MockHourEntryStatus, HourEntryStatus
 };
 
 // Sprint 8.6A: mismo mapeo para el estado de Invoice.
+//
+// Sprint 8.7B.2: "parcial" no es un valor real de la columna (ver
+// deriveInvoiceStatus en src/lib/data/invoices.ts) — se deriva en runtime,
+// nunca se persiste. Ninguna factura del mock usa ese estado (el mock no
+// modela pagos parciales), así que esta entrada nunca se ejerce en la
+// práctica; se mapea a EMITIDA porque es el valor real de columna que
+// produciría "parcial" al leerse (saldoPendiente entre 0 y total).
 const INVOICE_STATUS_BY_MOCK_KEY: Record<MockInvoiceStatus, InvoiceStatus> = {
   borrador: InvoiceStatus.BORRADOR,
   emitida: InvoiceStatus.EMITIDA,
+  parcial: InvoiceStatus.EMITIDA,
   pagada: InvoiceStatus.PAGADA,
   vencida: InvoiceStatus.VENCIDA,
   anulada: InvoiceStatus.ANULADA,

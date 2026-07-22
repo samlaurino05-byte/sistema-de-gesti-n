@@ -6,3 +6,10 @@ export type EmitInvoiceState = {
 };
 
 export const initialEmitInvoiceState: EmitInvoiceState = { status: "idle" };
+
+export type RegisterPaymentState = {
+  status: "idle" | "error" | "success";
+  error?: string;
+};
+
+export const initialRegisterPaymentState: RegisterPaymentState = { status: "idle" };

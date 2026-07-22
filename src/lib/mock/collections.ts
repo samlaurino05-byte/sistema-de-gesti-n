@@ -50,7 +50,11 @@ export type CollectionInvoice = {
 
 function enrichInvoice(invoice: Invoice): CollectionInvoice | null {
   if (invoice.saldoPendiente <= 0) return null;
-  if (invoice.estado !== "emitida" && invoice.estado !== "vencida") return null;
+  // Sprint 8.7B.2: "parcial" (saldoPendiente > 0 pero menor al total) sigue
+  // teniendo saldo por cobrar — debe seguir apareciendo en gestión de
+  // cobranza igual que "emitida"/"vencida". Ver deriveInvoiceStatus en
+  // src/lib/data/invoices.ts.
+  if (invoice.estado !== "emitida" && invoice.estado !== "vencida" && invoice.estado !== "parcial") return null;
 
   const client = getClientById(invoice.clientId);
   if (!client) return null;

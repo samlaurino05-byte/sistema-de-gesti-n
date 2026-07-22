@@ -4,6 +4,7 @@ import { invoiceStatusLabels, type InvoiceStatus } from "@/lib/mock/invoices";
 const statusVariants: Record<InvoiceStatus, "success" | "warning" | "danger" | "info" | "neutral"> = {
   borrador: "neutral",
   emitida: "info",
+  parcial: "warning",
   pagada: "success",
   vencida: "danger",
   anulada: "neutral",

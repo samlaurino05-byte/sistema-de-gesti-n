@@ -7,12 +7,15 @@ import { AiPanel } from "@/components/ui/AiPanel";
 import { TimelineItem } from "@/components/ui/TimelineItem";
 import { QuickActionsGrid } from "@/components/ui/QuickActionsGrid";
 import { InvoiceWorkspaceHeader } from "@/components/invoices/InvoiceWorkspaceHeader";
+import { RegisterPaymentButton } from "@/components/invoices/RegisterPaymentButton";
+import { PaymentHistoryTable } from "@/components/invoices/PaymentHistoryTable";
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
 import { CollectionStatusBadge } from "@/components/collections/CollectionStatusBadge";
 import { getCollectionForInvoice, suggestedChannelLabels } from "@/lib/mock/collections";
 import { getInvoiceAiInsights, getInvoiceTimeline, invoiceQuickActions, type Invoice } from "@/lib/mock/invoices";
 import { getInvoiceBySlugForOrganization } from "@/lib/data/invoices";
+import { getPaymentsForInvoice, type PaymentListItem } from "@/lib/data/payments";
 import { requireActiveSession } from "@/lib/auth/session";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -29,8 +32,12 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
   const session = await requireActiveSession();
 
   let invoice;
+  let payments: PaymentListItem[] = [];
   try {
-    invoice = await getInvoiceBySlugForOrganization(session.organizationId, id);
+    [invoice, payments] = await Promise.all([
+      getInvoiceBySlugForOrganization(session.organizationId, id),
+      getPaymentsForInvoice(session.organizationId, id),
+    ]);
   } catch (error) {
     console.error(`No se pudo cargar la factura "${id}":`, error);
     return (
@@ -158,6 +165,14 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
                   <TimelineItem key={entry.id} {...entry} isLast={index === timeline.length - 1} />
                 ))}
               </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                <h3 className="text-sm font-semibold text-slate-900">Historial de pagos</h3>
+                <RegisterPaymentButton invoiceSlug={invoice.id} saldoPendiente={invoice.saldoPendiente} />
+              </div>
+              <PaymentHistoryTable payments={payments} />
             </section>
 
             <section className="rounded-xl border border-slate-200 bg-white shadow-sm">

@@ -30,9 +30,10 @@ import type { HourEntry } from "@/lib/mock/hours";
 // una factura está saldada. El valor crudo de Invoice.estado en la base
 // solo distingue las transiciones de workflow que no son derivables del
 // saldo (BORRADOR → EMITIDA al emitir, ANULADA al anular manualmente).
-// "Pagada" y "vencida" nunca se leen del valor crudo de la columna —
-// Cobranzas (src/lib/data/payments.ts) tampoco los escribe ahí, para no
-// mantener dos fuentes de verdad del mismo hecho.
+// "Pagada", "parcial" y "vencida" nunca se leen del valor crudo de la
+// columna ni se persisten en ningún lado — Cobranzas
+// (src/lib/data/payments.ts) tampoco los escribe, para no mantener dos
+// fuentes de verdad del mismo hecho.
 function isPastDueDate(fechaVencimiento: Date | null): boolean {
   if (!fechaVencimiento) return false;
   const startOfToday = new Date();
@@ -40,14 +41,23 @@ function isPastDueDate(fechaVencimiento: Date | null): boolean {
   return fechaVencimiento.getTime() < startOfToday.getTime();
 }
 
+// Sprint 8.7B.2: "parcial" se agrega acá, no como un valor nuevo de
+// PrismaInvoiceStatus (eso requeriría migración de schema) — se deriva
+// exclusivamente de `total`/`saldoPendiente`, los mismos dos campos que ya
+// resuelve esta capa. Va inmediatamente después de "pagada" y antes de
+// "vencida": un pago parcial es la información más específica y relevante
+// (prevalece incluso si la factura además está vencida — la regla acordada
+// no distingue esos dos casos, solo si `0 < saldoPendiente < total`).
 function deriveInvoiceStatus(
   estado: PrismaInvoiceStatus,
   saldoPendiente: number,
+  total: number,
   fechaVencimiento: Date | null
 ): InvoiceStatus {
   if (estado === PrismaInvoiceStatus.BORRADOR) return "borrador";
   if (estado === PrismaInvoiceStatus.ANULADA) return "anulada";
   if (saldoPendiente <= 0) return "pagada";
+  if (saldoPendiente < total) return "parcial";
   if (isPastDueDate(fechaVencimiento)) return "vencida";
   return "emitida";
 }
@@ -135,7 +145,7 @@ function toInvoiceListItem(row: InvoiceListRow): InvoiceListItem {
     iva: row.iva.toNumber(),
     total,
     saldoPendiente,
-    estado: deriveInvoiceStatus(row.estado, saldoPendiente, row.fechaVencimiento),
+    estado: deriveInvoiceStatus(row.estado, saldoPendiente, total, row.fechaVencimiento),
     cliente: {
       nombreComercial: row.client.nombreComercial,
       razonSocial: row.client.razonSocial,
@@ -161,7 +171,11 @@ export function summarizeInvoiceList(invoiceList: InvoiceListItem[]): InvoicesSu
       if (invoice.estado !== "borrador" && invoice.estado !== "anulada") {
         acc.totalFacturado += invoice.total;
       }
-      if (invoice.estado === "emitida") {
+      // Sprint 8.7B.2: "parcial" también tiene saldo pendiente de cobro —
+      // sin este caso, una factura con pago parcial dejaría de sumar acá
+      // apenas deja de ser "emitida" (regresión directa de agregar
+      // "parcial" a InvoiceStatus, no un ajuste opcional).
+      if (invoice.estado === "emitida" || invoice.estado === "parcial") {
         acc.pendienteCobro += invoice.saldoPendiente;
       }
       if (invoice.estado === "vencida") {
@@ -248,7 +262,7 @@ export async function getInvoiceBySlugForOrganization(
     iva: row.iva.toNumber(),
     total,
     saldoPendiente,
-    estado: deriveInvoiceStatus(row.estado, saldoPendiente, row.fechaVencimiento),
+    estado: deriveInvoiceStatus(row.estado, saldoPendiente, total, row.fechaVencimiento),
     cliente: { id: row.client.slug, nombreComercial: row.client.nombreComercial },
     hourEntries,
   };

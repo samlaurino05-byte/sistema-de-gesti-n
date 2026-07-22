@@ -11,7 +11,13 @@ import {
 import { getHourEntryMetrics, hourEntries, type HourEntry } from "@/lib/mock/hours";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-export type InvoiceStatus = "borrador" | "emitida" | "pagada" | "vencida" | "anulada";
+// Sprint 8.7B.2: "parcial" se agrega acá (no en prisma/schema.prisma) porque
+// es un estado puramente visual, derivado en runtime de
+// `saldoPendiente > 0 && saldoPendiente < total` — nunca se persiste ni
+// existe como valor del enum InvoiceStatus de Prisma. Ver
+// deriveInvoiceStatus en src/lib/data/invoices.ts, la única función que
+// decide este valor.
+export type InvoiceStatus = "borrador" | "emitida" | "parcial" | "pagada" | "vencida" | "anulada";
 
 export type Invoice = {
   id: string;
@@ -38,6 +44,7 @@ export function calculateInvoiceAmounts(subtotal: number) {
 export const invoiceStatusLabels: Record<InvoiceStatus, string> = {
   borrador: "Borrador",
   emitida: "Emitida",
+  parcial: "Parcial",
   pagada: "Pagada",
   vencida: "Vencida",
   anulada: "Anulada",
@@ -304,6 +311,15 @@ export function getInvoiceTimeline(
       icon: MailCheck,
       tone: "default",
     });
+  } else if (invoice.estado === "parcial") {
+    entries.push({
+      id: "pago-parcial",
+      date: formatDate(invoice.fechaVencimiento),
+      title: "Pago parcial registrado",
+      description: `Saldo pendiente de ${formatCurrency(invoice.saldoPendiente)}.`,
+      icon: Banknote,
+      tone: "warning",
+    });
   } else if (invoice.estado === "anulada") {
     entries.push({
       id: "anulacion",
@@ -324,7 +340,7 @@ export function getInvoiceTimeline(
 // es quien los provee. Misma lógica y mismos textos, sin lookup oculto al
 // mock de Clientes/Horas.
 export function getInvoiceAiInsights(
-  invoice: Pick<Invoice, "numero" | "estado" | "fechaVencimiento">,
+  invoice: Pick<Invoice, "numero" | "estado" | "fechaVencimiento" | "saldoPendiente">,
   clientName: string,
   linkedHours: HourEntry[]
 ): string[] {
@@ -336,6 +352,10 @@ export function getInvoiceAiInsights(
     );
   } else if (invoice.estado === "emitida") {
     insights.push(`Vence el ${formatDate(invoice.fechaVencimiento)}. Todavía no se registró un pago.`);
+  } else if (invoice.estado === "parcial") {
+    insights.push(
+      `${invoice.numero} tiene un pago parcial registrado. Saldo pendiente de ${formatCurrency(invoice.saldoPendiente)}.`
+    );
   } else if (invoice.estado === "pagada") {
     insights.push(`${invoice.numero} fue cobrada en su totalidad. Sin acciones pendientes.`);
   } else if (invoice.estado === "borrador") {
