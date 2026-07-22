@@ -26,13 +26,31 @@ import type { HourEntry } from "@/lib/mock/hours";
 // Server Action ni en el componente que la invoque (8.6B.2, todavía no
 // implementado).
 
-const STATUS_TO_DTO: Record<PrismaInvoiceStatus, InvoiceStatus> = {
-  [PrismaInvoiceStatus.BORRADOR]: "borrador",
-  [PrismaInvoiceStatus.EMITIDA]: "emitida",
-  [PrismaInvoiceStatus.PAGADA]: "pagada",
-  [PrismaInvoiceStatus.VENCIDA]: "vencida",
-  [PrismaInvoiceStatus.ANULADA]: "anulada",
-};
+// Sprint 8.7A/8.7B.1: el saldo pendiente es la única fuente de verdad de si
+// una factura está saldada. El valor crudo de Invoice.estado en la base
+// solo distingue las transiciones de workflow que no son derivables del
+// saldo (BORRADOR → EMITIDA al emitir, ANULADA al anular manualmente).
+// "Pagada" y "vencida" nunca se leen del valor crudo de la columna —
+// Cobranzas (src/lib/data/payments.ts) tampoco los escribe ahí, para no
+// mantener dos fuentes de verdad del mismo hecho.
+function isPastDueDate(fechaVencimiento: Date | null): boolean {
+  if (!fechaVencimiento) return false;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  return fechaVencimiento.getTime() < startOfToday.getTime();
+}
+
+function deriveInvoiceStatus(
+  estado: PrismaInvoiceStatus,
+  saldoPendiente: number,
+  fechaVencimiento: Date | null
+): InvoiceStatus {
+  if (estado === PrismaInvoiceStatus.BORRADOR) return "borrador";
+  if (estado === PrismaInvoiceStatus.ANULADA) return "anulada";
+  if (saldoPendiente <= 0) return "pagada";
+  if (isPastDueDate(fechaVencimiento)) return "vencida";
+  return "emitida";
+}
 
 // `saldoPendiente` nunca se persiste (ver nota de diseño en
 // prisma/schema.prisma): se deriva de `total - Σ Payment.monto`. Un
@@ -105,6 +123,7 @@ type InvoiceListRow = {
 
 function toInvoiceListItem(row: InvoiceListRow): InvoiceListItem {
   const total = row.total.toNumber();
+  const saldoPendiente = computeSaldoPendiente(row.estado, total, row.payments);
 
   return {
     id: row.slug,
@@ -115,8 +134,8 @@ function toInvoiceListItem(row: InvoiceListRow): InvoiceListItem {
     subtotal: row.subtotal.toNumber(),
     iva: row.iva.toNumber(),
     total,
-    saldoPendiente: computeSaldoPendiente(row.estado, total, row.payments),
-    estado: STATUS_TO_DTO[row.estado],
+    saldoPendiente,
+    estado: deriveInvoiceStatus(row.estado, saldoPendiente, row.fechaVencimiento),
     cliente: {
       nombreComercial: row.client.nombreComercial,
       razonSocial: row.client.razonSocial,
@@ -213,6 +232,7 @@ export async function getInvoiceBySlugForOrganization(
   if (!row) return null;
 
   const total = row.total.toNumber();
+  const saldoPendiente = computeSaldoPendiente(row.estado, total, row.payments);
   const hourEntryIds = row.items
     .map((item) => item.hourEntryId)
     .filter((id): id is string => id !== null);
@@ -227,8 +247,8 @@ export async function getInvoiceBySlugForOrganization(
     subtotal: row.subtotal.toNumber(),
     iva: row.iva.toNumber(),
     total,
-    saldoPendiente: computeSaldoPendiente(row.estado, total, row.payments),
-    estado: STATUS_TO_DTO[row.estado],
+    saldoPendiente,
+    estado: deriveInvoiceStatus(row.estado, saldoPendiente, row.fechaVencimiento),
     cliente: { id: row.client.slug, nombreComercial: row.client.nombreComercial },
     hourEntries,
   };
