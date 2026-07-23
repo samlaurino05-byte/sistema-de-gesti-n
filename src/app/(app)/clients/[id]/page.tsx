@@ -254,6 +254,7 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
                         saldoPendiente: invoice.saldoPendiente,
                         estado: invoice.estado,
                         cliente: {
+                          id: client.id,
                           nombreComercial: client.nombreComercial,
                           razonSocial: client.razonSocial,
                           cuit: client.cuit,

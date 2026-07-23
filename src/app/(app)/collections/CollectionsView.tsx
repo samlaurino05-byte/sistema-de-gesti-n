@@ -5,47 +5,50 @@ import { AlertOctagon, Banknote, Clock3, Search, Wallet } from "lucide-react";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { AiPanel } from "@/components/ui/AiPanel";
 import { ClientCollectionCard } from "@/components/collections/ClientCollectionCard";
-import {
-  collectionStatusLabels,
-  getCollectionInvoices,
-  getCollectionsAiInsights,
-  getCollectionsDailySummary,
-  getCollectionsSummary,
-  groupCollectionsByClient,
-  type CollectionStatus,
-} from "@/lib/mock/collections";
-import type { Invoice } from "@/lib/mock/invoices";
+import { collectionStatusLabels, type CollectionStatus } from "@/lib/collectionLabels";
+import type { ClientCollectionGroup, CollectionsDailySummary, CollectionsSummary } from "@/lib/data/collections";
 import { cn, formatCurrency } from "@/lib/utils";
 
 type StatusFilter = "todas" | CollectionStatus;
 
-const statusFilters: StatusFilter[] = ["todas", "critica", "vencida", "por-vencer", "en-seguimiento", "al-dia"];
+const statusFilters: StatusFilter[] = ["todas", "critica", "vencida", "por-vencer", "al-dia"];
 
-export function CollectionsView({ invoices, initialSearch = "" }: { invoices: Invoice[]; initialSearch?: string }) {
+type CollectionsViewProps = {
+  groups: ClientCollectionGroup[];
+  summary: CollectionsSummary;
+  dailySummary: CollectionsDailySummary;
+  aiSuggestions: { text: string }[];
+  initialSearch?: string;
+};
+
+// Sprint 8.7C.1: los grupos, el resumen y las sugerencias de IA ya llegan
+// completamente resueltos desde src/lib/data/collections.ts (vía
+// page.tsx) — este componente solo filtra por texto/estado sobre datos ya
+// agrupados. No suma pagos, no calcula mora ni decide prioridad; mismo
+// criterio que InvoicesView/ClientsView.
+export function CollectionsView({ groups, summary, dailySummary, aiSuggestions, initialSearch = "" }: CollectionsViewProps) {
   const [search, setSearch] = useState(initialSearch);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todas");
 
-  const allItems = useMemo(() => getCollectionInvoices(invoices), [invoices]);
-  const summary = useMemo(() => getCollectionsSummary(invoices), [invoices]);
-  const dailySummary = useMemo(() => getCollectionsDailySummary(invoices), [invoices]);
-  const aiSuggestions = useMemo(() => getCollectionsAiInsights(invoices).map((text) => ({ text })), [invoices]);
-
-  const filteredItems = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return allItems.filter((item) => {
-      const matchesStatus = statusFilter === "todas" || item.estadoCobranza === statusFilter;
-      const matchesQuery =
-        query.length === 0 ||
-        item.client.nombreComercial.toLowerCase().includes(query) ||
-        item.client.cuit.toLowerCase().includes(query) ||
-        item.invoice.numero.toLowerCase().includes(query);
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          const matchesStatus = statusFilter === "todas" || item.estadoCobranza === statusFilter;
+          const matchesQuery =
+            query.length === 0 ||
+            group.client.nombreComercial.toLowerCase().includes(query) ||
+            group.client.cuit.toLowerCase().includes(query) ||
+            item.invoice.numero.toLowerCase().includes(query);
 
-      return matchesStatus && matchesQuery;
-    });
-  }, [allItems, search, statusFilter]);
-
-  const groups = useMemo(() => groupCollectionsByClient(filteredItems), [filteredItems]);
+          return matchesStatus && matchesQuery;
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groups, search, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -100,9 +103,9 @@ export function CollectionsView({ invoices, initialSearch = "" }: { invoices: In
             </div>
           </section>
 
-          {groups.length > 0 ? (
+          {filteredGroups.length > 0 ? (
             <div className="space-y-4">
-              {groups.map((group) => (
+              {filteredGroups.map((group) => (
                 <ClientCollectionCard key={group.client.id} group={group} />
               ))}
             </div>

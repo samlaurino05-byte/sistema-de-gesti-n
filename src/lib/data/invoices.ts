@@ -97,6 +97,12 @@ export type InvoiceListItem = {
   saldoPendiente: number;
   estado: InvoiceStatus;
   cliente: {
+    // Sprint 8.7C.1: `id` (slug del cliente) se agrega acá para que
+    // Cobranzas pueda agrupar por cliente de forma confiable (dos clientes
+    // podrían compartir nombre comercial) y armar los links a
+    // /clients/[id] sin tener que resolverlo aparte. Aditivo — ningún
+    // consumidor existente de InvoiceListItem se ve afectado.
+    id: string;
     nombreComercial: string;
     razonSocial: string;
     cuit: string;
@@ -113,7 +119,7 @@ const INVOICE_LIST_SELECT = {
   iva: true,
   total: true,
   estado: true,
-  client: { select: { nombreComercial: true, razonSocial: true, cuit: true } },
+  client: { select: { slug: true, nombreComercial: true, razonSocial: true, cuit: true } },
   payments: { select: { monto: true } },
 } as const;
 
@@ -127,7 +133,7 @@ type InvoiceListRow = {
   iva: { toNumber(): number };
   total: { toNumber(): number };
   estado: PrismaInvoiceStatus;
-  client: { nombreComercial: string; razonSocial: string; cuit: string };
+  client: { slug: string; nombreComercial: string; razonSocial: string; cuit: string };
   payments: { monto: { toNumber(): number } }[];
 };
 
@@ -147,6 +153,7 @@ function toInvoiceListItem(row: InvoiceListRow): InvoiceListItem {
     saldoPendiente,
     estado: deriveInvoiceStatus(row.estado, saldoPendiente, total, row.fechaVencimiento),
     cliente: {
+      id: row.client.slug,
       nombreComercial: row.client.nombreComercial,
       razonSocial: row.client.razonSocial,
       cuit: row.client.cuit,

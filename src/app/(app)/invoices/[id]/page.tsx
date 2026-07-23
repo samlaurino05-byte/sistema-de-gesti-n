@@ -12,8 +12,9 @@ import { PaymentHistoryTable } from "@/components/invoices/PaymentHistoryTable";
 import { HourRow } from "@/components/hours/HourRow";
 import { HourTableHead } from "@/components/hours/HourTableHead";
 import { CollectionStatusBadge } from "@/components/collections/CollectionStatusBadge";
-import { getCollectionForInvoice, suggestedChannelLabels } from "@/lib/mock/collections";
-import { getInvoiceAiInsights, getInvoiceTimeline, invoiceQuickActions, type Invoice } from "@/lib/mock/invoices";
+import { getCollectionSeverityForInvoice } from "@/lib/data/collections";
+import { suggestedChannelLabels } from "@/lib/collectionLabels";
+import { getInvoiceAiInsights, getInvoiceTimeline, invoiceQuickActions } from "@/lib/mock/invoices";
 import { getInvoiceBySlugForOrganization } from "@/lib/data/invoices";
 import { getPaymentsForInvoice, type PaymentListItem } from "@/lib/data/payments";
 import { requireActiveSession } from "@/lib/auth/session";
@@ -69,28 +70,12 @@ export default async function InvoiceWorkspacePage({ params }: { params: Promise
     (text) => ({ text })
   );
 
-  // Cobranzas sigue sin migrar (fuera de alcance de Sprint 8.6A): su
-  // función de enriquecimiento (getCollectionForInvoice) todavía espera la
-  // forma completa del `Invoice` del mock, incluido `clientId` y
-  // `hourEntryIds` (que ya no existen en el DTO de Facturación real). Se
-  // arma acá un objeto que satisface esa forma con los datos que
-  // src/lib/data/invoices.ts ya resolvió — no se inventa ningún valor;
-  // `hourEntryIds` queda vacío porque esa función nunca lo usa.
-  const collectionInvoiceShim: Invoice = {
-    id: invoice.id,
-    numero: invoice.numero,
-    clientId: invoice.cliente.id,
-    concepto: invoice.concepto,
-    fechaEmision: invoice.fechaEmision,
-    fechaVencimiento: invoice.fechaVencimiento,
-    hourEntryIds: [],
-    subtotal: invoice.subtotal,
-    iva: invoice.iva,
-    total: invoice.total,
-    saldoPendiente: invoice.saldoPendiente,
-    estado: invoice.estado,
-  };
-  const collection = getCollectionForInvoice(collectionInvoiceShim);
+  // Sprint 8.7C.1: reemplaza el shim que antes armaba un `Invoice` del
+  // mock para poder llamar a la Cobranzas también mock — ahora
+  // getCollectionSeverityForInvoice (src/lib/data/collections.ts) recibe
+  // directamente el DTO real ya resuelto (estructuralmente compatible, sin
+  // convertir nada) y comparte la misma regla de severidad que /collections.
+  const collection = await getCollectionSeverityForInvoice(invoice);
 
   return (
     <>

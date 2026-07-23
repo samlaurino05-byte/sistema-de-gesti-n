@@ -2,13 +2,15 @@ import Link from "next/link";
 import { Mail, MessageCircle, Phone, type LucideIcon } from "lucide-react";
 import { CollectionActionButtons } from "@/components/collections/CollectionActionButtons";
 import { CollectionStatusBadge } from "@/components/collections/CollectionStatusBadge";
+import { InvoiceStatusBadge } from "@/components/invoices/InvoiceStatusBadge";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   collectionPriorityLabels,
   suggestedChannelLabels,
-  type ClientCollectionGroup,
   type CollectionPriority,
   type SuggestedChannel,
-} from "@/lib/mock/collections";
+} from "@/lib/collectionLabels";
+import type { ClientCollectionGroup } from "@/lib/data/collections";
 import { cn, formatCurrency, formatDate, getInitials } from "@/lib/utils";
 
 const priorityStyles: Record<CollectionPriority, string> = {
@@ -39,7 +41,11 @@ export function ClientCollectionCard({ group }: { group: ClientCollectionGroup }
               >
                 {group.client.nombreComercial}
               </Link>
-              <CollectionStatusBadge status={group.peorEstado} />
+              {/* Estado de cobranza (severidad por vencimiento), prioridad
+                  y seguimiento — información complementaria, no excluyente
+                  entre sí ni con el estado financiero de cada factura (ver
+                  abajo, por ítem). */}
+              <CollectionStatusBadge status={group.peorEstadoCobranza} />
               <span
                 className={cn(
                   "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset",
@@ -48,6 +54,7 @@ export function ClientCollectionCard({ group }: { group: ClientCollectionGroup }
               >
                 Prioridad {collectionPriorityLabels[group.prioridad]}
               </span>
+              {group.tieneSeguimientoActivo && <StatusBadge label="En seguimiento" variant="info" />}
             </div>
             <p className="mt-1 text-xs text-slate-500">Responsable interno: {group.client.responsableInterno}</p>
           </div>
@@ -96,7 +103,13 @@ export function ClientCollectionCard({ group }: { group: ClientCollectionGroup }
                       : `Vence en ${Math.abs(item.diasMora)} días`}
                 </span>
 
+                {/* Dos ejes independientes, uno al lado del otro: estado
+                    financiero (¿se cobró o no?) y estado de cobranza
+                    (¿qué tan urgente es gestionarla?) — nunca colapsados
+                    en un único valor. */}
+                <InvoiceStatusBadge status={item.invoice.estado} />
                 <CollectionStatusBadge status={item.estadoCobranza} />
+                {item.followUp.enSeguimiento && <StatusBadge label="En seguimiento" variant="info" />}
 
                 <span className="flex items-center gap-1 text-xs text-slate-500">
                   <ChannelIcon className="h-3.5 w-3.5" />
